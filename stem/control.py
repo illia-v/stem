@@ -543,10 +543,6 @@ class BaseController(object):
 
     self._asyncio_loop = asyncio.get_event_loop()
 
-    self._asyncio_thread = threading.Thread(target = self._asyncio_loop.run_forever, name = 'asyncio')
-    self._asyncio_thread.setDaemon(True)
-    self._asyncio_thread.start()
-
     self._msg_lock = threading.RLock()
 
     self._status_listeners = []  # tuples of the form (callback, spawn_thread)
@@ -578,7 +574,7 @@ class BaseController(object):
     if is_authenticated:
       self._post_authentication()
 
-  def msg(self, message):
+  async def msg(self, message):
     """
     Sends a message to our control socket and provides back its reply.
 
@@ -644,7 +640,7 @@ class BaseController(object):
       try:
         self._asyncio_loop.create_task(self._socket.send(message))
 
-        response = asyncio.run_coroutine_threadsafe(self._reply_queue.get(), self._asyncio_loop).result()
+        response = await self._reply_queue.get()
 
         # If the message we received back had an exception then re-raise it to the
         # caller. Otherwise return the response.
@@ -707,7 +703,7 @@ class BaseController(object):
 
     return self._is_authenticated if self.is_alive() else False
 
-  def connect(self):
+  async def connect(self):
     """
     Reconnects our control socket. This is a pass-through for our socket's
     :func:`~stem.socket.ControlSocket.connect` method.
@@ -715,15 +711,15 @@ class BaseController(object):
     :raises: :class:`stem.SocketError` if unable to make a socket
     """
 
-    asyncio.run_coroutine_threadsafe(self._socket.connect(), self._asyncio_loop).result()
+    await self._socket.connect()
 
-  def close(self):
+  async def close(self):
     """
     Closes our socket connection. This is a pass-through for our socket's
     :func:`~stem.socket.BaseSocket.close` method.
     """
 
-    asyncio.run_coroutine_threadsafe(self._socket.close(), self._asyncio_loop).result()
+    await self._socket.close()
 
     # Join on any outstanding state change listeners. Closing is a state change
     # of its own, so if we have any listeners it's quite likely there's some
@@ -735,9 +731,6 @@ class BaseController(object):
     for t in self._state_change_threads:
       if t.is_alive() and threading.current_thread() != t:
         t.join()
-
-    self._asyncio_loop.call_soon_threadsafe(self._asyncio_loop.stop)
-    self._asyncio_thread.join()
 
   def get_socket(self):
     """
@@ -811,11 +804,11 @@ class BaseController(object):
       self._status_listeners = new_listeners
       return is_changed
 
-  def __enter__(self):
+  async def __aenter__(self):
     return self
 
-  def __exit__(self, exit_type, value, traceback):
-    self.close()
+  async def __aexit__(self, exit_type, value, traceback):
+    await self.close()
 
   def _handle_event(self, event_message):
     """
