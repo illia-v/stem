@@ -63,11 +63,7 @@ exiting to a destination is permissible or not. For instance...
   ============ ===========
 """
 
-from __future__ import absolute_import
-
 import functools
-import re
-import socket
 import zlib
 
 import stem.util
