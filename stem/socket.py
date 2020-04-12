@@ -101,6 +101,12 @@ class BaseSocket(object):
     self._is_alive = False
     self._connection_time = 0.0  # time when we last connected or disconnected
 
+    self.msg_lock = threading.RLock()
+
+    # queues where incoming messages are directed
+    self.reply_queue = asyncio.Queue()
+    self.event_queue = asyncio.Queue()
+
     # Tracks sending and receiving separately. This should be safe, and doing
     # so prevents deadlock where we block writes because we're waiting to read
     # a message that isn't coming.

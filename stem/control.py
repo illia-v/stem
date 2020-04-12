@@ -543,14 +543,8 @@ class BaseController(object):
 
     self._asyncio_loop = asyncio.get_event_loop()
 
-    self._msg_lock = threading.RLock()
-
     self._status_listeners = []  # tuples of the form (callback, spawn_thread)
     self._status_listeners_lock = threading.RLock()
-
-    # queues where incoming messages are directed
-    self._reply_queue = asyncio.Queue()
-    self._event_queue = asyncio.Queue()
 
     self._event_notice = asyncio.Event()
 
@@ -590,7 +584,7 @@ class BaseController(object):
       * :class:`stem.SocketClosed` if the socket is shut down
     """
 
-    with self._msg_lock:
+    with self._socket.msg_lock:
       # If our _reply_queue isn't empty then one of a few things happened...
       #
       # - Our connection was closed and probably re-restablished. This was
@@ -619,9 +613,9 @@ class BaseController(object):
       #   Thankfully this only seems to arise in edge cases around rapidly
       #   closing/reconnecting the socket.
 
-      while not self._reply_queue.empty():
+      while not self._socket.reply_queue.empty():
         try:
-          response = self._reply_queue.get_nowait()
+          response = self._socket.reply_queue.get_nowait()
 
           if isinstance(response, stem.SocketClosed):
             pass  # this is fine
@@ -640,7 +634,7 @@ class BaseController(object):
       try:
         self._asyncio_loop.create_task(self._socket.send(message))
 
-        response = await self._reply_queue.get()
+        response = await self._socket.reply_queue.get()
 
         # If the message we received back had an exception then re-raise it to the
         # caller. Otherwise return the response.
@@ -916,18 +910,18 @@ class BaseController(object):
 
         if control_message.content()[-1][0] == '650':
           # asynchronous message, adds to the event queue and wakes up its handler
-          await self._event_queue.put(control_message)
+          await self._socket.event_queue.put(control_message)
           self._event_notice.set()
         else:
           # response to a msg() call
-          await self._reply_queue.put(control_message)
+          await self._socket.reply_queue.put(control_message)
       except stem.ControllerError as exc:
         # Assume that all exceptions belong to the reader. This isn't always
         # true, but the msg() call can do a better job of sorting it out.
         #
         # Be aware that the msg() method relies on this to unblock callers.
 
-        await self._reply_queue.put(exc)
+        await self._socket.reply_queue.put(exc)
 
   async def _event_loop(self):
     """
@@ -941,9 +935,9 @@ class BaseController(object):
 
     while True:
       try:
-        event_message = self._event_queue.get_nowait()
+        event_message = self._socket.event_queue.get_nowait()
         self._handle_event(event_message)
-        self._event_queue.task_done()
+        self._socket.event_queue.task_done()
 
         # Attempt to finish processing enqueued events when our controller closes
 
@@ -1089,7 +1083,7 @@ class Controller(BaseController):
       * :class:`stem.connection.AuthenticationFailure` if unable to authenticate
     """
 
-    with self._msg_lock:
+    with self._socket.msg_lock:
       self.connect()
       self.clear_cache()
       self.authenticate(*args, **kwargs)
