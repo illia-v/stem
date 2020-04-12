@@ -388,6 +388,9 @@ class RelaySocket(BaseSocket):
     except socket.error as exc:
       raise stem.SocketError(exc)
 
+  def get_new_socket(self):
+    return self.__class__(self.address, self.port)
+
 
 class ControlSocket(BaseSocket):
   """
@@ -461,6 +464,9 @@ class ControlPort(ControlSocket):
     except socket.error as exc:
       raise stem.SocketError(exc)
 
+  def get_new_socket(self):
+    return self.__class__(self.address, self.port)
+
 
 class ControlSocketFile(ControlSocket):
   """
@@ -488,6 +494,9 @@ class ControlSocketFile(ControlSocket):
       return await asyncio.open_unix_connection(self.path)
     except socket.error as exc:
       raise stem.SocketError(exc)
+
+  def get_new_socket(self):
+    return self.__class__(self.address, self.port)
 
 
 async def send_message(writer, message, raw = False):

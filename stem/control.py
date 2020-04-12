@@ -243,6 +243,7 @@ If you're fine with allowing your script to raise exceptions then this can be mo
 import asyncio
 import calendar
 import collections
+import contextlib
 import functools
 import inspect
 import io
@@ -538,8 +539,11 @@ class BaseController(object):
   socket as though it hasn't yet been authenticated.
   """
 
-  def __init__(self, control_socket, is_authenticated = False):
-    self._socket = control_socket
+  def __init__(self, control_socket, is_authenticated = False, conn_limit = 10):
+    self._sockets = [control_socket]
+    self._available_sockets = set(self._sockets)
+    self._conn_limit = conn_limit
+    self._conn_semaphore = asyncio.Semaphore(conn_limit)
 
     self._asyncio_loop = asyncio.get_event_loop()
 
@@ -558,6 +562,18 @@ class BaseController(object):
     if is_authenticated:
       self._post_authentication()
 
+  @contextlib.asynccontextmanager
+  async def _acquire_socket(self):
+    if len(self._available_sockets):
+      socket = self._available_sockets.pop()
+    else:
+      socket = self._sockets[0].get_new_socket()
+      self._sockets.append(socket)
+      self._prepare_socket(socket)
+      await socket.connect()
+    yield socket
+    self._available_sockets.add(socket)
+
   async def msg(self, message):
     """
     Sends a message to our control socket and provides back its reply.
@@ -574,73 +590,74 @@ class BaseController(object):
       * :class:`stem.SocketClosed` if the socket is shut down
     """
 
-    with self._socket.msg_lock:
-      # If our _reply_queue isn't empty then one of a few things happened...
-      #
-      # - Our connection was closed and probably re-restablished. This was
-      #   in reply to pulling for an asynchronous event and getting this is
-      #   expected - ignore it.
-      #
-      # - Pulling for asynchronous events produced an error. If this was a
-      #   ProtocolError then it's a tor bug, and if a non-closure SocketError
-      #   then it was probably a socket glitch. Deserves an INFO level log
-      #   message.
-      #
-      # - This is a leftover response for a msg() call. We can't tell who an
-      #   exception was earmarked for, so we only know that this was the case
-      #   if it's a ControlMessage.
-      #
-      #   This is the most concerning situation since it indicates that one of
-      #   our callers didn't get their reply. However, this is still a
-      #   perfectly viable use case. For instance...
-      #
-      #   1. We send a request.
-      #   2. The reader thread encounters an exception, for instance a socket
-      #      error. We enqueue the exception.
-      #   3. The reader thread receives the reply.
-      #   4. We raise the socket error, and have an undelivered message.
-      #
-      #   Thankfully this only seems to arise in edge cases around rapidly
-      #   closing/reconnecting the socket.
+    async with self._conn_semaphore, self._acquire_socket() as socket:
+        with socket.msg_lock:
+          # If our _reply_queue isn't empty then one of a few things happened...
+          #
+          # - Our connection was closed and probably re-restablished. This was
+          #   in reply to pulling for an asynchronous event and getting this is
+          #   expected - ignore it.
+          #
+          # - Pulling for asynchronous events produced an error. If this was a
+          #   ProtocolError then it's a tor bug, and if a non-closure SocketError
+          #   then it was probably a socket glitch. Deserves an INFO level log
+          #   message.
+          #
+          # - This is a leftover response for a msg() call. We can't tell who an
+          #   exception was earmarked for, so we only know that this was the case
+          #   if it's a ControlMessage.
+          #
+          #   This is the most concerning situation since it indicates that one of
+          #   our callers didn't get their reply. However, this is still a
+          #   perfectly viable use case. For instance...
+          #
+          #   1. We send a request.
+          #   2. The reader thread encounters an exception, for instance a socket
+          #      error. We enqueue the exception.
+          #   3. The reader thread receives the reply.
+          #   4. We raise the socket error, and have an undelivered message.
+          #
+          #   Thankfully this only seems to arise in edge cases around rapidly
+          #   closing/reconnecting the socket.
 
-      while not self._socket.reply_queue.empty():
-        try:
-          response = self._socket.reply_queue.get_nowait()
+          while not socket.reply_queue.empty():
+            try:
+              response = socket.reply_queue.get_nowait()
 
-          if isinstance(response, stem.SocketClosed):
-            pass  # this is fine
-          elif isinstance(response, stem.ProtocolError):
-            log.info('Tor provided a malformed message (%s)' % response)
-          elif isinstance(response, stem.ControllerError):
-            log.info('Socket experienced a problem (%s)' % response)
-          elif isinstance(response, stem.response.ControlMessage):
-            log.info('Failed to deliver a response: %s' % response)
-        except asyncio.QueueEmpty:
-          # the empty() method is documented to not be fully reliable so this
-          # isn't entirely surprising
+              if isinstance(response, stem.SocketClosed):
+                pass  # this is fine
+              elif isinstance(response, stem.ProtocolError):
+                log.info('Tor provided a malformed message (%s)' % response)
+              elif isinstance(response, stem.ControllerError):
+                log.info('Socket experienced a problem (%s)' % response)
+              elif isinstance(response, stem.response.ControlMessage):
+                log.info('Failed to deliver a response: %s' % response)
+            except asyncio.QueueEmpty:
+              # the empty() method is documented to not be fully reliable so this
+              # isn't entirely surprising
 
-          break
+              break
 
-      try:
-        self._asyncio_loop.create_task(self._socket.send(message))
+          try:
+            self._asyncio_loop.create_task(socket.send(message))
 
-        response = await self._socket.reply_queue.get()
+            response = await socket.reply_queue.get()
 
-        # If the message we received back had an exception then re-raise it to the
-        # caller. Otherwise return the response.
+            # If the message we received back had an exception then re-raise it to the
+            # caller. Otherwise return the response.
 
-        if isinstance(response, stem.ControllerError):
-          raise response
-        else:
-          return response
-      except stem.SocketClosed:
-        # If the recv() thread caused the SocketClosed then we could still be
-        # in the process of closing. Calling close() here so that we can
-        # provide an assurance to the caller that when we raise a SocketClosed
-        # exception we are shut down afterward for realz.
+            if isinstance(response, stem.ControllerError):
+              raise response
+            else:
+              return response
+          except stem.SocketClosed:
+            # If the recv() thread caused the SocketClosed then we could still be
+            # in the process of closing. Calling close() here so that we can
+            # provide an assurance to the caller that when we raise a SocketClosed
+            # exception we are shut down afterward for realz.
 
-        self.close()
-        raise
+            self.close()
+            raise
 
   def is_alive(self):
     """
@@ -650,7 +667,7 @@ class BaseController(object):
     :returns: **bool** that's **True** if our socket is connected and **False** otherwise
     """
 
-    return self._socket.is_alive()
+    return all(socket.is_alive() for socket in self._sockets)
 
   def is_localhost(self):
     """
@@ -695,7 +712,7 @@ class BaseController(object):
     :raises: :class:`stem.SocketError` if unable to make a socket
     """
 
-    await self._socket.connect()
+    await asyncio.gather(*(socket.connect() for socket in self._sockets))
 
   async def close(self):
     """
@@ -703,7 +720,7 @@ class BaseController(object):
     :func:`~stem.socket.BaseSocket.close` method.
     """
 
-    await self._socket.close()
+    await asyncio.gather(*(socket.close() for socket in self._sockets))
 
     # Join on any outstanding state change listeners. Closing is a state change
     # of its own, so if we have any listeners it's quite likely there's some
@@ -853,7 +870,9 @@ class BaseController(object):
     # Any changes to our is_alive() state happen under the send lock, so we
     # need to have it to ensure it doesn't change beneath us.
 
-    with self._socket._get_send_lock():
+    with contextlib.ExitStack() as stack:
+      for socket in self._sockets:
+        stack.enter_context(socket._get_send_lock())
       with self._status_listeners_lock:
         # States imply that our socket is either alive or not, which may not
         # hold true when multiple events occur in quick succession. For
