@@ -678,7 +678,7 @@ class BaseController(object):
     :returns: **bool** that's **True** if the connection is for the local host and **False** otherwise
     """
 
-    return self._socket.is_localhost()
+    return self._sockets[0].is_localhost()
 
   def connection_time(self):
     """
@@ -692,7 +692,7 @@ class BaseController(object):
       we've never connected
     """
 
-    return self._socket.connection_time()
+    return sum(socket.connection_time() for socket in self._sockets)
 
   def is_authenticated(self):
     """
@@ -733,7 +733,7 @@ class BaseController(object):
       if t.is_alive() and threading.current_thread() != t:
         t.join()
 
-  def get_socket(self):
+  def get_sockets(self):
     """
     Provides the socket used to speak with the tor process. Communicating with
     the socket directly isn't advised since it may confuse this controller.
@@ -741,7 +741,7 @@ class BaseController(object):
     :returns: :class:`~stem.socket.ControlSocket` we're communicating with
     """
 
-    return self._socket
+    return self._sockets
 
   def get_latest_heartbeat(self):
     """
