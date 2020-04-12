@@ -548,22 +548,12 @@ class BaseController(object):
 
     self._event_notice = asyncio.Event()
 
-    # saves our socket's prior _connect() and _close() methods so they can be
-    # called along with ours
-
-    self._socket_connect = self._socket._connect
-    self._socket_close = self._socket._close
-
-    self._socket._connect = self._connect
-    self._socket._close = self._close
-
     self._last_heartbeat = 0.0  # timestamp for when we last heard from tor
     self._is_authenticated = False
 
     self._state_change_threads = []  # threads we've spawned to notify of state changes
 
-    if self._socket.is_alive():
-      self._create_loop_tasks()
+    self._prepare_socket(control_socket)
 
     if is_authenticated:
       self._post_authentication()
@@ -815,13 +805,13 @@ class BaseController(object):
 
     pass
 
-  async def _connect(self):
-    self._create_loop_tasks()
+  async def _connect(self, socket, original_connect):
+    self._create_loop_tasks(socket)
     self._notify_status_listeners(State.INIT)
-    await self._socket_connect()
+    await original_connect()
     self._is_authenticated = False
 
-  async def _close(self):
+  async def _close(self, original_close):
     # Our is_alive() state is now false. Our reader thread should already be
     # awake from recv() raising a closure exception. Wake up the event thread
     # too so it can end.
@@ -833,7 +823,20 @@ class BaseController(object):
 
     self._notify_status_listeners(State.CLOSED)
 
-    await self._socket_close()
+    await original_close()
+
+  def _prepare_socket(self, socket):
+    # saves our socket's prior _connect() and _close() methods so they can be
+    # called along with ours
+    socket._connect = functools.partial(
+      self._connect,
+      socket,
+      socket._connect,
+    )
+    socket._close = functools.partial(self._close, socket._close)
+
+    if socket.is_alive():
+      self._create_loop_tasks(socket)
 
   def _post_authentication(self):
     # actions to be taken after we have a newly authenticated connection
@@ -884,17 +887,16 @@ class BaseController(object):
           else:
             listener(self, state, change_timestamp)
 
-  def _create_loop_tasks(self):
+  def _create_loop_tasks(self, socket):
     """
     Initializes daemon threads. Threads can't be reused so we need to recreate
     them if we're restarted.
     """
 
-    self._asyncio_loop.create_task(self._reader_loop())
-    self._asyncio_loop.create_task(self._event_loop())
+    self._asyncio_loop.create_task(self._reader_loop(socket))
+    self._asyncio_loop.create_task(self._event_loop(socket))
 
-
-  async def _reader_loop(self):
+  async def _reader_loop(self, socket):
     """
     Continually pulls from the control socket, directing the messages into
     queues based on their type. Controller messages come in two varieties...
@@ -905,25 +907,25 @@ class BaseController(object):
 
     while self.is_alive():
       try:
-        control_message = await self._socket.recv()
+        control_message = await socket.recv()
         self._last_heartbeat = time.time()
 
         if control_message.content()[-1][0] == '650':
           # asynchronous message, adds to the event queue and wakes up its handler
-          await self._socket.event_queue.put(control_message)
+          await socket.event_queue.put(control_message)
           self._event_notice.set()
         else:
           # response to a msg() call
-          await self._socket.reply_queue.put(control_message)
+          await socket.reply_queue.put(control_message)
       except stem.ControllerError as exc:
         # Assume that all exceptions belong to the reader. This isn't always
         # true, but the msg() call can do a better job of sorting it out.
         #
         # Be aware that the msg() method relies on this to unblock callers.
 
-        await self._socket.reply_queue.put(exc)
+        await socket.reply_queue.put(exc)
 
-  async def _event_loop(self):
+  async def _event_loop(self, socket):
     """
     Continually pulls messages from the _event_queue and sends them to our
     handle_event callback. This is done via its own thread so subclasses with a
@@ -935,9 +937,9 @@ class BaseController(object):
 
     while True:
       try:
-        event_message = self._socket.event_queue.get_nowait()
+        event_message = socket.event_queue.get_nowait()
         self._handle_event(event_message)
-        self._socket.event_queue.task_done()
+        socket.event_queue.task_done()
 
         # Attempt to finish processing enqueued events when our controller closes
 
