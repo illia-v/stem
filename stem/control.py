@@ -562,17 +562,15 @@ class BaseController(object):
     if is_authenticated:
       self._post_authentication()
 
-  @contextlib.asynccontextmanager
   async def _acquire_socket(self):
-    if len(self._available_sockets):
+    if self._available_sockets:
       socket = self._available_sockets.pop()
     else:
       socket = self._sockets[0].get_new_socket()
       self._sockets.append(socket)
       self._prepare_socket(socket)
       await socket.connect()
-    yield socket
-    self._available_sockets.add(socket)
+    return socket
 
   async def msg(self, message):
     """
@@ -590,7 +588,8 @@ class BaseController(object):
       * :class:`stem.SocketClosed` if the socket is shut down
     """
 
-    async with self._conn_semaphore, self._acquire_socket() as socket:
+    async with self._conn_semaphore:
+      socket = await self._acquire_socket()
       with socket.msg_lock:
         # If our _reply_queue isn't empty then one of a few things happened...
         #
@@ -642,6 +641,7 @@ class BaseController(object):
           self._asyncio_loop.create_task(socket.send(message))
 
           response = await socket.reply_queue.get()
+          self._available_sockets.add(socket)
 
           # If the message we received back had an exception then re-raise it to the
           # caller. Otherwise return the response.
