@@ -656,7 +656,7 @@ class BaseController(object):
           # provide an assurance to the caller that when we raise a SocketClosed
           # exception we are shut down afterward for realz.
 
-          self.close()
+          await self.close()
           raise
 
   def is_alive(self):
