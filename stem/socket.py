@@ -496,7 +496,7 @@ class ControlSocketFile(ControlSocket):
       raise stem.SocketError(exc)
 
   def get_new_socket(self):
-    return self.__class__(self.address, self.port)
+    return self.__class__(self.path)
 
 
 async def send_message(writer, message, raw = False):
