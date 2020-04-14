@@ -361,7 +361,7 @@ def _connect_auth(control_socket, password, password_prompt, chroot_path, contro
     return None
 
 
-def authenticate(controller, password = None, chroot_path = None, protocolinfo_response = None):
+async def authenticate(controller, password = None, chroot_path = None, protocolinfo_response = None):
   """
   Authenticates to a control socket using the information provided by a
   PROTOCOLINFO response. In practice this will often be all we need to
@@ -472,7 +472,7 @@ def authenticate(controller, password = None, chroot_path = None, protocolinfo_r
 
   if not protocolinfo_response:
     try:
-      protocolinfo_response = get_protocolinfo(controller)
+      protocolinfo_response = await get_protocolinfo(controller)
     except stem.ProtocolError:
       raise IncorrectSocketType('unable to use the control socket')
     except stem.SocketError as exc:
@@ -519,9 +519,9 @@ def authenticate(controller, password = None, chroot_path = None, protocolinfo_r
 
     try:
       if auth_type == AuthMethod.NONE:
-        authenticate_none(controller, False)
+        await authenticate_none(controller, False)
       elif auth_type == AuthMethod.PASSWORD:
-        authenticate_password(controller, password, False)
+        await authenticate_password(controller, password, False)
       elif auth_type in (AuthMethod.COOKIE, AuthMethod.SAFECOOKIE):
         cookie_path = protocolinfo_response.cookie_path
 
@@ -529,12 +529,12 @@ def authenticate(controller, password = None, chroot_path = None, protocolinfo_r
           cookie_path = os.path.join(chroot_path, cookie_path.lstrip(os.path.sep))
 
         if auth_type == AuthMethod.SAFECOOKIE:
-          authenticate_safecookie(controller, cookie_path, False)
+          await authenticate_safecookie(controller, cookie_path, False)
         else:
-          authenticate_cookie(controller, cookie_path, False)
+          await authenticate_cookie(controller, cookie_path, False)
 
       if isinstance(controller, stem.control.BaseController):
-        controller._post_authentication()
+        await controller._post_authentication()
 
       return  # success!
     except OpenAuthRejected as exc:
@@ -575,7 +575,7 @@ def authenticate(controller, password = None, chroot_path = None, protocolinfo_r
   raise AssertionError('BUG: Authentication failed without providing a recognized exception: %s' % str(auth_exceptions))
 
 
-def authenticate_none(controller, suppress_ctl_errors = True):
+async def authenticate_none(controller, suppress_ctl_errors = True):
   """
   Authenticates to an open control socket. All control connections need to
   authenticate before they can be used, even if tor hasn't been configured to
@@ -600,19 +600,19 @@ def authenticate_none(controller, suppress_ctl_errors = True):
   """
 
   try:
-    auth_response = _msg(controller, 'AUTHENTICATE')
+    auth_response = await _msg(controller, 'AUTHENTICATE')
 
     # if we got anything but an OK response then error
     if str(auth_response) != 'OK':
       try:
-        controller.connect()
+        await controller.connect()
       except:
         pass
 
       raise OpenAuthRejected(str(auth_response), auth_response)
   except stem.ControllerError as exc:
     try:
-      controller.connect()
+      await controller.connect()
     except:
       pass
 
@@ -622,7 +622,7 @@ def authenticate_none(controller, suppress_ctl_errors = True):
       raise OpenAuthRejected('Socket failed (%s)' % exc)
 
 
-def authenticate_password(controller, password, suppress_ctl_errors = True):
+async def authenticate_password(controller, password, suppress_ctl_errors = True):
   """
   Authenticates to a control socket that uses a password (via the
   HashedControlPassword torrc option). Quotes in the password are escaped.
@@ -663,12 +663,12 @@ def authenticate_password(controller, password, suppress_ctl_errors = True):
   password = password.replace('"', '\\"')
 
   try:
-    auth_response = _msg(controller, 'AUTHENTICATE "%s"' % password)
+    auth_response = await _msg(controller, 'AUTHENTICATE "%s"' % password)
 
     # if we got anything but an OK response then error
     if str(auth_response) != 'OK':
       try:
-        controller.connect()
+        await controller.connect()
       except:
         pass
 
@@ -682,7 +682,7 @@ def authenticate_password(controller, password, suppress_ctl_errors = True):
         raise PasswordAuthRejected(str(auth_response), auth_response)
   except stem.ControllerError as exc:
     try:
-      controller.connect()
+      await controller.connect()
     except:
       pass
 
@@ -692,7 +692,7 @@ def authenticate_password(controller, password, suppress_ctl_errors = True):
       raise PasswordAuthRejected('Socket failed (%s)' % exc)
 
 
-def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = True):
+async def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = True):
   """
   Authenticates to a control socket that uses the contents of an authentication
   cookie (generated via the CookieAuthentication torrc option). This does basic
@@ -752,12 +752,12 @@ def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = True):
 
     auth_token_hex = binascii.b2a_hex(stem.util.str_tools._to_bytes(cookie_data))
     msg = 'AUTHENTICATE %s' % stem.util.str_tools._to_unicode(auth_token_hex)
-    auth_response = _msg(controller, msg)
+    auth_response = await _msg(controller, msg)
 
     # if we got anything but an OK response then error
     if str(auth_response) != 'OK':
       try:
-        controller.connect()
+        await controller.connect()
       except:
         pass
 
@@ -772,7 +772,7 @@ def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = True):
         raise CookieAuthRejected(str(auth_response), cookie_path, False, auth_response)
   except stem.ControllerError as exc:
     try:
-      controller.connect()
+      await controller.connect()
     except:
       pass
 
@@ -782,7 +782,7 @@ def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = True):
       raise CookieAuthRejected('Socket failed (%s)' % exc, cookie_path, False)
 
 
-def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True):
+async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True):
   """
   Authenticates to a control socket using the safe cookie method, which is
   enabled by setting the CookieAuthentication torrc option on Tor client's which
@@ -847,11 +847,11 @@ def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True)
 
   try:
     client_nonce_hex = stem.util.str_tools._to_unicode(binascii.b2a_hex(client_nonce))
-    authchallenge_response = _msg(controller, 'AUTHCHALLENGE SAFECOOKIE %s' % client_nonce_hex)
+    authchallenge_response = await _msg(controller, 'AUTHCHALLENGE SAFECOOKIE %s' % client_nonce_hex)
 
     if not authchallenge_response.is_ok():
       try:
-        controller.connect()
+        await controller.connect()
       except:
         pass
 
@@ -869,7 +869,7 @@ def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True)
         raise AuthChallengeFailed(authchallenge_response, cookie_path)
   except stem.ControllerError as exc:
     try:
-      controller.connect()
+      await controller.connect()
     except:
       pass
 
@@ -901,7 +901,7 @@ def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True)
       CLIENT_HASH_CONSTANT,
       cookie_data + client_nonce + authchallenge_response.server_nonce)
 
-    auth_response = _msg(controller, 'AUTHENTICATE %s' % stem.util.str_tools._to_unicode(binascii.b2a_hex(client_hash)))
+    auth_response = await _msg(controller, 'AUTHENTICATE %s' % stem.util.str_tools._to_unicode(binascii.b2a_hex(client_hash)))
   except stem.ControllerError as exc:
     try:
       controller.connect()
@@ -931,7 +931,7 @@ def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True)
       raise CookieAuthRejected(str(auth_response), cookie_path, True, auth_response)
 
 
-def get_protocolinfo(controller):
+async def get_protocolinfo(controller):
   """
   Issues a PROTOCOLINFO query to a control socket, getting information about
   the tor process running on it. If the socket is already closed then it is
@@ -952,7 +952,7 @@ def get_protocolinfo(controller):
   """
 
   try:
-    protocolinfo_response = _msg(controller, 'PROTOCOLINFO 1')
+    protocolinfo_response = await _msg(controller, 'PROTOCOLINFO 1')
   except:
     protocolinfo_response = None
 
@@ -963,7 +963,7 @@ def get_protocolinfo(controller):
     controller.connect()
 
     try:
-      protocolinfo_response = _msg(controller, 'PROTOCOLINFO 1')
+      protocolinfo_response = await _msg(controller, 'PROTOCOLINFO 1')
     except stem.SocketClosed as exc:
       raise stem.SocketError(exc)
 
@@ -971,17 +971,17 @@ def get_protocolinfo(controller):
   return protocolinfo_response
 
 
-def _msg(controller, message):
+async def _msg(controller, message):
   """
   Sends and receives a message with either a
   :class:`~stem.socket.ControlSocket` or :class:`~stem.control.BaseController`.
   """
 
   if isinstance(controller, stem.socket.ControlSocket):
-    controller.send(message)
-    return controller.recv()
+    await controller.send(message)
+    return await controller.recv()
   else:
-    return controller.msg(message)
+    return await controller.msg(message)
 
 
 def _connection_for_default_port(address):

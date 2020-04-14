@@ -572,7 +572,7 @@ class BaseController(object):
       self._create_loop_tasks()
 
     if is_authenticated:
-      self._post_authentication()
+      self._asyncio_loop.create_task(self._post_authentication())
 
   async def msg(self, message):
     """
@@ -840,7 +840,7 @@ class BaseController(object):
 
     await self._socket_close()
 
-  def _post_authentication(self):
+  async def _post_authentication(self):
     # actions to be taken after we have a newly authenticated connection
 
     self._is_authenticated = True
@@ -1039,7 +1039,7 @@ class Controller(BaseController):
         self.clear_cache()
         self._notify_status_listeners(State.RESET)
 
-    self.add_event_listener(_sighup_listener, EventType.SIGNAL)
+    self._asyncio_loop.create_task(self.add_event_listener(_sighup_listener, EventType.SIGNAL))
 
     def _confchanged_listener(event):
       if self.is_caching_enabled():
@@ -1054,7 +1054,7 @@ class Controller(BaseController):
 
         self._confchanged_cache_invalidation(to_cache)
 
-    self.add_event_listener(_confchanged_listener, EventType.CONF_CHANGED)
+    self._asyncio_loop.create_task(self.add_event_listener(_confchanged_listener, EventType.CONF_CHANGED))
 
     def _address_changed_listener(event):
       if event.action in ('EXTERNAL_ADDRESS', 'DNS_USELESS'):
@@ -1062,20 +1062,20 @@ class Controller(BaseController):
         self._set_cache({'address': None}, 'getinfo')
         self._last_address_exc = None
 
-    self.add_event_listener(_address_changed_listener, EventType.STATUS_SERVER)
+    self._asyncio_loop.create_task(self.add_event_listener(_address_changed_listener, EventType.STATUS_SERVER))
 
-  def close(self):
+  async def close(self):
     self.clear_cache()
-    super(Controller, self).close()
+    await super(Controller, self).close()
 
-  def authenticate(self, *args, **kwargs):
+  async def authenticate(self, *args, **kwargs):
     """
     A convenience method to authenticate the controller. This is just a
     pass-through to :func:`stem.connection.authenticate`.
     """
 
     import stem.connection
-    stem.connection.authenticate(self, *args, **kwargs)
+    await stem.connection.authenticate(self, *args, **kwargs)
 
   def reconnect(self, *args, **kwargs):
     """
@@ -2070,7 +2070,7 @@ class Controller(BaseController):
       if hs_desc_content_listener:
         self.remove_event_listener(hs_desc_content_listener)
 
-  def get_conf(self, param, default = UNDEFINED, multiple = False):
+  async def get_conf(self, param, default = UNDEFINED, multiple = False):
     """
     get_conf(param, default = UNDEFINED, multiple = False)
 
@@ -2116,10 +2116,10 @@ class Controller(BaseController):
     if not param:
       return default if default != UNDEFINED else None
 
-    entries = self.get_conf_map(param, default, multiple)
+    entries = await self.get_conf_map(param, default, multiple)
     return _case_insensitive_lookup(entries, param, default)
 
-  def get_conf_map(self, params, default = UNDEFINED, multiple = True):
+  async def get_conf_map(self, params, default = UNDEFINED, multiple = True):
     """
     get_conf_map(params, default = UNDEFINED, multiple = True)
 
@@ -2200,7 +2200,7 @@ class Controller(BaseController):
       return self._get_conf_dict_to_response(reply, default, multiple)
 
     try:
-      response = self.msg('GETCONF %s' % ' '.join(lookup_params))
+      response = await self.msg('GETCONF %s' % ' '.join(lookup_params))
       stem.response.convert('GETCONF', response)
       reply.update(response.entries)
 
@@ -2994,7 +2994,7 @@ class Controller(BaseController):
     else:
       raise stem.ProtocolError('DEL_ONION returned unexpected response code: %s' % response.code)
 
-  def add_event_listener(self, listener, *events):
+  async def add_event_listener(self, listener, *events):
     """
     Directs further tor controller events to a given function. The function is
     expected to take a single argument, which is a
@@ -3043,7 +3043,7 @@ class Controller(BaseController):
       for event_type in events:
         self._event_listeners.setdefault(event_type, []).append(listener)
 
-      failed_events = self._attach_listeners()[1]
+      failed_events = (await self._attach_listeners())[1]
 
       # restricted the failures to just things we requested
 
@@ -3736,14 +3736,14 @@ class Controller(BaseController):
 
     self.msg('DROPGUARDS')
 
-  def _post_authentication(self):
-    super(Controller, self)._post_authentication()
+  async def _post_authentication(self):
+    await super(Controller, self)._post_authentication()
 
     # try to re-attach event listeners to the new instance
 
     with self._event_listeners_lock:
       try:
-        failed_events = self._attach_listeners()[1]
+        failed_events = (await self._attach_listeners())[1]
 
         if failed_events:
           # remove our listeners for these so we don't keep failing
@@ -3757,10 +3757,10 @@ class Controller(BaseController):
 
     # issue TAKEOWNERSHIP if we're the owning process for this tor instance
 
-    owning_pid = self.get_conf('__OwningControllerProcess', None)
+    owning_pid = await self.get_conf('__OwningControllerProcess', None)
 
     if owning_pid == str(os.getpid()) and self.is_localhost():
-      response = self.msg('TAKEOWNERSHIP')
+      response = await self.msg('TAKEOWNERSHIP')
       stem.response.convert('SINGLELINE', response)
 
       if response.is_ok():
@@ -3791,7 +3791,7 @@ class Controller(BaseController):
             except Exception as exc:
               log.warn('Event listener raised an uncaught exception (%s): %s' % (exc, event_message))
 
-  def _attach_listeners(self):
+  async def _attach_listeners(self):
     """
     Attempts to subscribe to the self._event_listeners events from tor. This is
     a no-op if we're not currently authenticated.
@@ -3806,7 +3806,7 @@ class Controller(BaseController):
     with self._event_listeners_lock:
       if self.is_authenticated():
         # try to set them all
-        response = self.msg('SETEVENTS %s' % ' '.join(self._event_listeners.keys()))
+        response = await self.msg('SETEVENTS %s' % ' '.join(self._event_listeners.keys()))
 
         if response.is_ok():
           set_events = list(self._event_listeners.keys())
@@ -3825,7 +3825,7 @@ class Controller(BaseController):
           # See if we can set some subset of our events.
 
           for event in list(self._event_listeners.keys()):
-            response = self.msg('SETEVENTS %s' % ' '.join(set_events + [event]))
+            response = await self.msg('SETEVENTS %s' % ' '.join(set_events + [event]))
 
             if response.is_ok():
               set_events.append(event)
