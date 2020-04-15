@@ -1486,7 +1486,7 @@ class Controller(BaseController):
     )
 
   @with_default()
-  def get_protocolinfo(self, default = UNDEFINED):
+  async def get_protocolinfo(self, default = UNDEFINED):
     """
     get_protocolinfo(default = UNDEFINED)
 
@@ -1506,7 +1506,7 @@ class Controller(BaseController):
     """
 
     import stem.connection
-    return stem.connection.get_protocolinfo(self)
+    return await stem.connection.get_protocolinfo(self)
 
   @with_default()
   def get_user(self, default = UNDEFINED):
