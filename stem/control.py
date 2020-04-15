@@ -1112,7 +1112,7 @@ class Controller(BaseController):
       await self.authenticate(*args, **kwargs)
 
   @with_default()
-  def get_info(self, params, default = UNDEFINED, get_bytes = False):
+  async def get_info(self, params, default = UNDEFINED, get_bytes = False):
     """
     get_info(params, default = UNDEFINED, get_bytes = False)
 
@@ -1189,7 +1189,7 @@ class Controller(BaseController):
         return list(reply.values())[0]
 
     try:
-      response = self.msg('GETINFO %s' % ' '.join(params))
+      response = await self.msg('GETINFO %s' % ' '.join(params))
       stem.response.convert('GETINFO', response)
       response._assert_matches(params)
 
