@@ -1081,7 +1081,7 @@ class Controller(BaseController):
     import stem.connection
     await stem.connection.authenticate(self, *args, **kwargs)
 
-  def reconnect(self, *args, **kwargs):
+  async def reconnect(self, *args, **kwargs):
     """
     Reconnects and authenticates to our control socket.
 
@@ -1093,9 +1093,9 @@ class Controller(BaseController):
     """
 
     with self._msg_lock:
-      self.connect()
+      await self.connect()
       self.clear_cache()
-      self.authenticate(*args, **kwargs)
+      await self.authenticate(*args, **kwargs)
 
   @with_default()
   def get_info(self, params, default = UNDEFINED, get_bytes = False):
