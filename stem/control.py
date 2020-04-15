@@ -1236,7 +1236,7 @@ class Controller(BaseController):
       raise
 
   @with_default()
-  def get_version(self, default = UNDEFINED):
+  async def get_version(self, default = UNDEFINED):
     """
     get_version(default = UNDEFINED)
 
@@ -1258,7 +1258,7 @@ class Controller(BaseController):
     version = self._get_cache('version')
 
     if not version:
-      version_str = self.get_info('version')
+      version_str = await self.get_info('version')
       version = stem.version.Version(version_str[4:] if version_str.startswith('Tor ') else version_str)
       self._set_cache({'version': version})
 
