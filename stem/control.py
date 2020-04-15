@@ -1265,7 +1265,7 @@ class Controller(BaseController):
     return version
 
   @with_default()
-  def get_exit_policy(self, default = UNDEFINED):
+  async def get_exit_policy(self, default = UNDEFINED):
     """
     get_exit_policy(default = UNDEFINED)
 
@@ -1291,7 +1291,7 @@ class Controller(BaseController):
     policy = self._get_cache('exit_policy')
 
     if not policy:
-      policy = stem.exit_policy.ExitPolicy(*self.get_info('exit-policy/full').splitlines())
+      policy = stem.exit_policy.ExitPolicy(*(await self.get_info('exit-policy/full')).splitlines())
       self._set_cache({'exit_policy': policy})
 
     return policy
