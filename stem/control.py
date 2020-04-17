@@ -454,12 +454,6 @@ def with_default(yields = False):
   """
 
   def decorator(func):
-    is_coroutine_func = asyncio.iscoroutinefunction(func)
-    def coroutine_if_needed(func):
-      if is_coroutine_func:
-        return asyncio.coroutine(func)
-      return func
-
     def get_default(func, args, kwargs):
       arg_names = inspect.getargspec(func).args[1:]  # drop 'self'
       default_position = arg_names.index('default') if 'default' in arg_names else None
@@ -469,41 +463,62 @@ def with_default(yields = False):
       else:
         return kwargs.get('default', UNDEFINED)
 
-    if not yields:
-      @functools.wraps(func)
-      @coroutine_if_needed
-      def wrapped(self, *args, **kwargs):
-        try:
-          result = func(self, *args, **kwargs)
-          if is_coroutine_func:
-            result = yield from result
-          return result
-        except:
-          default = get_default(func, args, kwargs)
+    if asyncio.iscoroutinefunction(func):
+      if not yields:
+        @functools.wraps(func)
+        async def wrapped(self, *args, **kwargs):
+          try:
+            return await func(self, *args, **kwargs)
+          except:
+            default = get_default(func, args, kwargs)
 
-          if default == UNDEFINED:
-            raise
-          else:
-            return default
+            if default == UNDEFINED:
+              raise
+            else:
+              return default
+      else:
+        @functools.wraps(func)
+        async def wrapped(self, *args, **kwargs):
+          try:
+            for val in await func(self, *args, **kwargs):
+              yield val
+          except:
+            default = get_default(func, args, kwargs)
+
+            if default == UNDEFINED:
+              raise
+            else:
+              if default is not None:
+                for val in default:
+                  yield val
     else:
-      @functools.wraps(func)
-      @coroutine_if_needed
-      def wrapped(self, *args, **kwargs):
-        try:
-          result = func(self, *args, **kwargs)
-          if is_coroutine_func:
-            result = yield from result
-          for val in result:
-            yield val
-        except:
-          default = get_default(func, args, kwargs)
+      if not yields:
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+          try:
+            return func(self, *args, **kwargs)
+          except:
+            default = get_default(func, args, kwargs)
 
-          if default == UNDEFINED:
-            raise
-          else:
-            if default is not None:
-              for val in default:
-                yield val
+            if default == UNDEFINED:
+              raise
+            else:
+              return default
+      else:
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+          try:
+            for val in func(self, *args, **kwargs):
+              yield val
+          except:
+            default = get_default(func, args, kwargs)
+
+            if default == UNDEFINED:
+              raise
+            else:
+              if default is not None:
+                for val in default:
+                  yield val
 
     return wrapped
 
