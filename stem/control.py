@@ -3085,7 +3085,7 @@ class Controller(BaseController):
       if failed_events:
         raise stem.ProtocolError('SETEVENTS rejected %s' % ', '.join(failed_events))
 
-  def remove_event_listener(self, listener):
+  async def remove_event_listener(self, listener):
     """
     Stops a listener from being notified of further tor events.
 
@@ -3106,7 +3106,7 @@ class Controller(BaseController):
             del self._event_listeners[event_type]
 
       if event_types_changed:
-        response = self.msg('SETEVENTS %s' % ' '.join(self._event_listeners.keys()))
+        response = await self.msg('SETEVENTS %s' % ' '.join(self._event_listeners.keys()))
 
         if not response.is_ok():
           raise stem.ProtocolError('SETEVENTS received unexpected response\n%s' % response)
