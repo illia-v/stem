@@ -3979,20 +3979,12 @@ def _case_insensitive_lookup(entries, key, default = UNDEFINED):
   raise ValueError("key '%s' doesn't exist in dict: %s" % (key, entries))
 
 
-def _get_with_timeout(event_queue, timeout, start_time):
+async def _get_with_timeout(event_queue, timeout):
   """
   Pulls an item from a queue with a given timeout.
   """
 
-  if timeout:
-    time_left = timeout - (time.time() - start_time)
-
-    if time_left <= 0:
-      raise stem.Timeout('Reached our %0.1f second timeout' % timeout)
-
-    try:
-      return event_queue.get(True, time_left)
-    except asyncio.queues.QueueEmpty:
-      raise stem.Timeout('Reached our %0.1f second timeout' % timeout)
-  else:
-    return event_queue.get()
+  try:
+    return await asyncio.wait_for(event_queue.get(), timeout=timeout)
+  except asyncio.TimeoutError:
+    raise stem.Timeout('Reached our %0.1f second timeout' % timeout)
