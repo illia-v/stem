@@ -463,62 +463,60 @@ def with_default(yields = False):
       else:
         return kwargs.get('default', UNDEFINED)
 
-    if asyncio.iscoroutinefunction(func):
-      if not yields:
-        @functools.wraps(func)
-        async def wrapped(self, *args, **kwargs):
-          try:
-            return await func(self, *args, **kwargs)
-          except:
-            default = get_default(func, args, kwargs)
+    if asyncio.iscoroutinefunction(func) and not yields:
+      @functools.wraps(func)
+      async def wrapped(self, *args, **kwargs):
+        try:
+          return await func(self, *args, **kwargs)
+        except:
+          default = get_default(func, args, kwargs)
 
-            if default == UNDEFINED:
-              raise
-            else:
-              return default
-      else:
-        @functools.wraps(func)
-        async def wrapped(self, *args, **kwargs):
-          try:
-            for val in await func(self, *args, **kwargs):
-              yield val
-          except:
-            default = get_default(func, args, kwargs)
+          if default == UNDEFINED:
+            raise
+          else:
+            return default
+    elif inspect.isasyncgenfunction(func) and yields:
+      @functools.wraps(func)
+      async def wrapped(self, *args, **kwargs):
+        try:
+          async for val in func(self, *args, **kwargs):
+            yield val
+        except:
+          default = get_default(func, args, kwargs)
 
-            if default == UNDEFINED:
-              raise
-            else:
-              if default is not None:
-                for val in default:
-                  yield val
+          if default == UNDEFINED:
+            raise
+          else:
+            if default is not None:
+              for val in default:
+                yield val
+    elif not yields:
+      @functools.wraps(func)
+      def wrapped(self, *args, **kwargs):
+        try:
+          return func(self, *args, **kwargs)
+        except:
+          default = get_default(func, args, kwargs)
+
+          if default == UNDEFINED:
+            raise
+          else:
+            return default
     else:
-      if not yields:
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-          try:
-            return func(self, *args, **kwargs)
-          except:
-            default = get_default(func, args, kwargs)
+      @functools.wraps(func)
+      def wrapped(self, *args, **kwargs):
+        try:
+          for val in func(self, *args, **kwargs):
+            yield val
+        except:
+          default = get_default(func, args, kwargs)
 
-            if default == UNDEFINED:
-              raise
-            else:
-              return default
-      else:
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-          try:
-            for val in func(self, *args, **kwargs):
-              yield val
-          except:
-            default = get_default(func, args, kwargs)
-
-            if default == UNDEFINED:
-              raise
-            else:
-              if default is not None:
-                for val in default:
-                  yield val
+          if default == UNDEFINED:
+            raise
+          else:
+            if default is not None:
+              for val in default:
+                yield val
 
     return wrapped
 
