@@ -840,7 +840,7 @@ class BaseController(object):
   async def __aexit__(self, exit_type, value, traceback):
     await self.close()
 
-  def _handle_event(self, event_message):
+  async def _handle_event(self, event_message):
     """
     Callback to be overwritten by subclasses for event listening. This is
     notified whenever we receive an event from the control socket.
@@ -972,7 +972,7 @@ class BaseController(object):
     while True:
       try:
         event_message = self._event_queue.get_nowait()
-        self._handle_event(event_message)
+        await self._handle_event(event_message)
         self._event_queue.task_done()
 
         # Attempt to finish processing enqueued events when our controller closes
@@ -3807,7 +3807,7 @@ class Controller(BaseController):
       else:
         log.warn('We were unable assert ownership of tor through TAKEOWNERSHIP, despite being configured to be the owning process through __OwningControllerProcess. (%s)' % response)
 
-  def _handle_event(self, event_message):
+  async def _handle_event(self, event_message):
     try:
       stem.response.convert('EVENT', event_message)
       event_type = event_message.type
@@ -3820,7 +3820,10 @@ class Controller(BaseController):
         if listener_type == event_type:
           for listener in event_listeners:
             try:
-              listener(event_message)
+              if asyncio.iscoroutinefunction(listener):
+                await listener(event_message)
+              else:
+                listener(event_message)
             except Exception as exc:
               log.warn('Event listener raised an uncaught exception (%s): %s' % (exc, event_message))
 
