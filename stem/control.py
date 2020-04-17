@@ -2007,7 +2007,7 @@ class Controller(BaseController):
       yield desc
 
   @with_default()
-  def get_hidden_service_descriptor(self, address, default = UNDEFINED, servers = None, await_result = True, timeout = None):
+  async def get_hidden_service_descriptor(self, address, default = UNDEFINED, servers = None, await_result = True, timeout = None):
     """
     get_hidden_service_descriptor(address, default = UNDEFINED, servers = None, await_result = True)
 
@@ -2050,19 +2050,21 @@ class Controller(BaseController):
     if not stem.util.tor_tools.is_valid_hidden_service_address(address):
       raise ValueError("'%s.onion' isn't a valid hidden service address" % address)
 
-    hs_desc_queue, hs_desc_listener = queue.Queue(), None
-    hs_desc_content_queue, hs_desc_content_listener = queue.Queue(), None
+    hs_desc_queue, hs_desc_listener = asyncio.Queue(), None
+    hs_desc_content_queue, hs_desc_content_listener = asyncio.Queue(), None
     start_time = time.time()
 
     if await_result:
-      def hs_desc_listener(event):
-        hs_desc_queue.put(event)
+      async def hs_desc_listener(event):
+        await hs_desc_queue.put(event)
 
-      def hs_desc_content_listener(event):
-        hs_desc_content_queue.put(event)
+      async def hs_desc_content_listener(event):
+        await hs_desc_content_queue.put(event)
 
-      self.add_event_listener(hs_desc_listener, EventType.HS_DESC)
-      self.add_event_listener(hs_desc_content_listener, EventType.HS_DESC_CONTENT)
+      await asyncio.gather(
+        self.add_event_listener(hs_desc_listener, EventType.HS_DESC),
+        self.add_event_listener(hs_desc_content_listener, EventType.HS_DESC_CONTENT),
+      )
 
     try:
       request = 'HSFETCH %s' % address
@@ -2070,7 +2072,7 @@ class Controller(BaseController):
       if servers:
         request += ' ' + ' '.join(['SERVER=%s' % s for s in servers])
 
-      response = self.msg(request)
+      response = await self.msg(request)
       stem.response.convert('SINGLELINE', response)
 
       if not response.is_ok():
@@ -2080,7 +2082,7 @@ class Controller(BaseController):
         return None  # not waiting, so nothing to provide back
       else:
         while True:
-          event = _get_with_timeout(hs_desc_content_queue, timeout, start_time)
+          event = await _get_with_timeout(hs_desc_content_queue, timeout)
 
           if event.address == address:
             if event.descriptor:
@@ -2089,7 +2091,7 @@ class Controller(BaseController):
               # no descriptor, looking through HS_DESC to figure out why
 
               while True:
-                event = _get_with_timeout(hs_desc_queue, timeout, start_time)
+                event = await _get_with_timeout(hs_desc_queue, timeout)
 
                 if event.address == address and event.action == stem.HSDescAction.FAILED:
                   if event.reason == stem.HSDescReason.NOT_FOUND:
@@ -2097,11 +2099,15 @@ class Controller(BaseController):
                   else:
                     raise stem.DescriptorUnavailable('Unable to retrieve the descriptor for %s.onion (retrieved from %s): %s' % (address, event.directory_fingerprint, event.reason))
     finally:
+      awaitable_removals = []
+
       if hs_desc_listener:
-        self.remove_event_listener(hs_desc_listener)
+        awaitable_removals.append(self.remove_event_listener(hs_desc_listener))
 
       if hs_desc_content_listener:
-        self.remove_event_listener(hs_desc_content_listener)
+        awaitable_removals.append(self.remove_event_listener(hs_desc_content_listener))
+
+      await asyncio.gather(*awaitable_removals)
 
   async def get_conf(self, param, default = UNDEFINED, multiple = False):
     """
