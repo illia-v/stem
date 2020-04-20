@@ -2382,7 +2382,7 @@ class Controller(BaseController):
 
     self.set_options(dict([(entry, None) for entry in params]), True)
 
-  def set_options(self, params, reset = False):
+  async def set_options(self, params, reset = False):
     """
     Changes multiple tor configuration options via either a SETCONF or
     RESETCONF query. Both behave identically unless our value is None, in which
@@ -2435,7 +2435,7 @@ class Controller(BaseController):
         raise ValueError('Cannot set %s to %s since the value was a %s but we only accept strings' % (param, value, type(value).__name__))
 
     query = ' '.join(query_comp)
-    response = self.msg(query)
+    response = await self.msg(query)
     stem.response.convert('SINGLELINE', response)
 
     if response.is_ok():
