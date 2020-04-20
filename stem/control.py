@@ -2464,7 +2464,7 @@ class Controller(BaseController):
         raise stem.ProtocolError('Returned unexpected status code: %s' % response.code)
 
   @with_default()
-  def get_hidden_service_conf(self, default = UNDEFINED):
+  async def get_hidden_service_conf(self, default = UNDEFINED):
     """
     get_hidden_service_conf(default = UNDEFINED)
 
@@ -2510,7 +2510,7 @@ class Controller(BaseController):
     start_time = time.time()
 
     try:
-      response = self.msg('GETCONF HiddenServiceOptions')
+      response = await self.msg('GETCONF HiddenServiceOptions')
       stem.response.convert('GETCONF', response)
       log.debug('GETCONF HiddenServiceOptions (runtime: %0.4f)' %
                 (time.time() - start_time))
