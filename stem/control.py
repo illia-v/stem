@@ -2298,7 +2298,7 @@ class Controller(BaseController):
     return return_dict
 
   @with_default()
-  def is_set(self, param, default = UNDEFINED):
+  async def is_set(self, param, default = UNDEFINED):
     """
     is_set(param, default = UNDEFINED)
 
@@ -2316,13 +2316,13 @@ class Controller(BaseController):
       provided a default response
     """
 
-    return param in self._get_custom_options()
+    return param in await self._get_custom_options()
 
-  def _get_custom_options(self):
+  async def _get_custom_options(self):
     result = self._get_cache('get_custom_options')
 
     if not result:
-      config_lines = self.get_info('config-text').splitlines()
+      config_lines = (await self.get_info('config-text')).splitlines()
 
       # Tor provides some config options even if they haven't been set...
       #
@@ -2332,7 +2332,7 @@ class Controller(BaseController):
       default_lines = (
         'Log notice stdout',
         'Log notice file /var/log/tor/log',
-        'DataDirectory /home/%s/.tor' % self.get_user('undefined'),
+        'DataDirectory /home/%s/.tor' % await self.get_user('undefined'),
         'HiddenServiceStatistics 0',
       )
 
