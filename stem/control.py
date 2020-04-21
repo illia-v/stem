@@ -3397,7 +3397,7 @@ class Controller(BaseController):
 
     return circuits
 
-  def new_circuit(self, path = None, purpose = 'general', await_build = False, timeout = None):
+  async def new_circuit(self, path = None, purpose = 'general', await_build = False, timeout = None):
     """
     Requests a new circuit. If the path isn't provided, one is automatically
     selected.
@@ -3417,9 +3417,9 @@ class Controller(BaseController):
       * :class:`stem.Timeout` if **timeout** was reached
     """
 
-    return self.extend_circuit('0', path, purpose, await_build, timeout)
+    return await self.extend_circuit('0', path, purpose, await_build, timeout)
 
-  def extend_circuit(self, circuit_id = '0', path = None, purpose = 'general', await_build = False, timeout = None):
+  async def extend_circuit(self, circuit_id = '0', path = None, purpose = 'general', await_build = False, timeout = None):
     """
     Either requests the creation of a new circuit or extends an existing one.
 
@@ -3463,14 +3463,14 @@ class Controller(BaseController):
     # to build. This is icky, but we can't reliably do this via polling since
     # we then can't get the failure if it can't be created.
 
-    circ_queue, circ_listener = queue.Queue(), None
+    circ_queue, circ_listener = asyncio.Queue(), None
     start_time = time.time()
 
     if await_build:
-      def circ_listener(event):
-        circ_queue.put(event)
+      async def circ_listener(event):
+        await circ_queue.put(event)
 
-      self.add_event_listener(circ_listener, EventType.CIRC)
+      await self.add_event_listener(circ_listener, EventType.CIRC)
 
     try:
       args = [str(circuit_id)]
@@ -3484,7 +3484,7 @@ class Controller(BaseController):
       if purpose:
         args.append('purpose=%s' % purpose)
 
-      response = self.msg('EXTENDCIRCUIT %s' % ' '.join(args))
+      response = await self.msg('EXTENDCIRCUIT %s' % ' '.join(args))
       stem.response.convert('SINGLELINE', response)
 
       if response.code in ('512', '552'):
@@ -3499,7 +3499,7 @@ class Controller(BaseController):
 
       if await_build:
         while True:
-          circ = _get_with_timeout(circ_queue, timeout, start_time)
+          circ = await _get_with_timeout(circ_queue, timeout, start_time)
 
           if circ.id == new_circuit:
             if circ.status == CircStatus.BUILT:
@@ -3512,7 +3512,7 @@ class Controller(BaseController):
       return new_circuit
     finally:
       if circ_listener:
-        self.remove_event_listener(circ_listener)
+        await self.remove_event_listener(circ_listener)
 
   def repurpose_circuit(self, circuit_id, purpose):
     """
