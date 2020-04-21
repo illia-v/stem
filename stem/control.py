@@ -3700,7 +3700,7 @@ class Controller(BaseController):
     return max(0.0, self._last_newnym + 10 - time.time())
 
   @with_default()
-  def get_effective_rate(self, default = UNDEFINED, burst = False):
+  async def get_effective_rate(self, default = UNDEFINED, burst = False):
     """
     get_effective_rate(default = UNDEFINED, burst = False)
 
@@ -3730,7 +3730,7 @@ class Controller(BaseController):
     value = None
 
     for attr in attributes:
-      attr_value = int(self.get_conf(attr))
+      attr_value = int(await self.get_conf(attr))
 
       if attr_value == 0 and attr.startswith('Relay'):
         continue  # RelayBandwidthRate and RelayBandwidthBurst default to zero
