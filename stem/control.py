@@ -3739,7 +3739,7 @@ class Controller(BaseController):
 
     return value
 
-  def map_address(self, mapping):
+  async def map_address(self, mapping):
     """
     Map addresses to replacement addresses. Tor replaces subseqent connections
     to the original addresses with the replacement addresses.
@@ -3759,7 +3759,7 @@ class Controller(BaseController):
     """
 
     mapaddress_arg = ' '.join(['%s=%s' % (k, v) for (k, v) in list(mapping.items())])
-    response = self.msg('MAPADDRESS %s' % mapaddress_arg)
+    response = await self.msg('MAPADDRESS %s' % mapaddress_arg)
     stem.response.convert('MAPADDRESS', response)
 
     return response.entries
