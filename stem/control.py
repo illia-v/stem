@@ -3618,7 +3618,7 @@ class Controller(BaseController):
       else:
         raise stem.ProtocolError('ATTACHSTREAM returned unexpected response code: %s' % response.code)
 
-  def close_stream(self, stream_id, reason = stem.RelayEndReason.MISC, flag = ''):
+  async def close_stream(self, stream_id, reason = stem.RelayEndReason.MISC, flag = ''):
     """
     Closes the specified stream.
 
@@ -3634,7 +3634,7 @@ class Controller(BaseController):
     # there's a single value offset between RelayEndReason.index_of() and the
     # value that tor expects since tor's value starts with the index of one
 
-    response = self.msg('CLOSESTREAM %s %s %s' % (stream_id, stem.RelayEndReason.index_of(reason) + 1, flag))
+    response = await self.msg('CLOSESTREAM %s %s %s' % (stream_id, stem.RelayEndReason.index_of(reason) + 1, flag))
     stem.response.convert('SINGLELINE', response)
 
     if not response.is_ok():
