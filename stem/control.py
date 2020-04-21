@@ -2784,7 +2784,7 @@ class Controller(BaseController):
     return True
 
   @with_default()
-  def list_ephemeral_hidden_services(self, default = UNDEFINED, our_services = True, detached = False):
+  async def list_ephemeral_hidden_services(self, default = UNDEFINED, our_services = True, detached = False):
     """
     list_ephemeral_hidden_services(default = UNDEFINED, our_services = True, detached = False)
 
@@ -2813,11 +2813,11 @@ class Controller(BaseController):
     result = []
 
     if our_services:
-      result += self.get_info('onions/current').split('\n')
+      result += (await self.get_info('onions/current')).split('\n')
 
     if detached:
       try:
-        result += self.get_info('onions/detached').split('\n')
+        result += (await self.get_info('onions/detached')).split('\n')
       except (stem.ProtocolError, stem.OperationFailed) as exc:
         if 'No onion services of the specified type.' not in str(exc):
           raise
