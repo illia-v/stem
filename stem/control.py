@@ -3583,7 +3583,7 @@ class Controller(BaseController):
 
     return streams
 
-  def attach_stream(self, stream_id, circuit_id, exiting_hop = None):
+  async def attach_stream(self, stream_id, circuit_id, exiting_hop = None):
     """
     Attaches a stream to a circuit.
 
@@ -3605,7 +3605,7 @@ class Controller(BaseController):
     if exiting_hop:
       query += ' HOP=%s' % exiting_hop
 
-    response = self.msg(query)
+    response = await self.msg(query)
     stem.response.convert('SINGLELINE', response)
 
     if not response.is_ok():
