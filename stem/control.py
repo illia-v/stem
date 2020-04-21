@@ -2082,7 +2082,7 @@ class Controller(BaseController):
         return None  # not waiting, so nothing to provide back
       else:
         while True:
-          event = await _get_with_timeout(hs_desc_content_queue, timeout)
+          event = await _get_with_timeout(hs_desc_content_queue, timeout, start_time)
 
           if event.address == address:
             if event.descriptor:
@@ -2091,7 +2091,7 @@ class Controller(BaseController):
               # no descriptor, looking through HS_DESC to figure out why
 
               while True:
-                event = await _get_with_timeout(hs_desc_queue, timeout)
+                event = await _get_with_timeout(hs_desc_queue, timeout, start_time)
 
                 if event.address == address and event.action == stem.HSDescAction.FAILED:
                   if event.reason == stem.HSDescReason.NOT_FOUND:
@@ -3985,12 +3985,17 @@ def _case_insensitive_lookup(entries, key, default = UNDEFINED):
   raise ValueError("key '%s' doesn't exist in dict: %s" % (key, entries))
 
 
-async def _get_with_timeout(event_queue, timeout):
+async def _get_with_timeout(event_queue, timeout, start_time):
   """
   Pulls an item from a queue with a given timeout.
   """
 
+  if timeout:
+    time_left = timeout - (time.time() - start_time)
+  else:
+    time_left = None
+
   try:
-    return await asyncio.wait_for(event_queue.get(), timeout=timeout)
+    return await asyncio.wait_for(event_queue.get(), timeout=time_left)
   except asyncio.TimeoutError:
     raise stem.Timeout('Reached our %0.1f second timeout' % timeout)
