@@ -3559,7 +3559,7 @@ class Controller(BaseController):
         raise stem.ProtocolError('CLOSECIRCUIT returned unexpected response code: %s' % response.code)
 
   @with_default()
-  def get_streams(self, default = UNDEFINED):
+  async def get_streams(self, default = UNDEFINED):
     """
     get_streams(default = UNDEFINED)
 
@@ -3574,10 +3574,10 @@ class Controller(BaseController):
     """
 
     streams = []
-    response = self.get_info('stream-status')
+    response = await self.get_info('stream-status')
 
     for stream in response.splitlines():
-      message = stem.socket.recv_message(io.BytesIO(stem.util.str_tools._to_bytes('650 STREAM %s\r\n' % stream)))
+      message = await stem.socket.recv_message(io.BytesIO(stem.util.str_tools._to_bytes('650 STREAM %s\r\n' % stream)))
       stem.response.convert('EVENT', message)
       streams.append(message)
 
