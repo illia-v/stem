@@ -3514,7 +3514,7 @@ class Controller(BaseController):
       if circ_listener:
         await self.remove_event_listener(circ_listener)
 
-  def repurpose_circuit(self, circuit_id, purpose):
+  async def repurpose_circuit(self, circuit_id, purpose):
     """
     Changes a circuit's purpose. Currently, two purposes are recognized...
       * general
@@ -3526,7 +3526,7 @@ class Controller(BaseController):
     :raises: :class:`stem.InvalidArguments` if the circuit doesn't exist or if the purpose was invalid
     """
 
-    response = self.msg('SETCIRCUITPURPOSE %s purpose=%s' % (circuit_id, purpose))
+    response = await self.msg('SETCIRCUITPURPOSE %s purpose=%s' % (circuit_id, purpose))
     stem.response.convert('SINGLELINE', response)
 
     if not response.is_ok():
