@@ -3252,7 +3252,7 @@ class Controller(BaseController):
       self._request_cache = {}
       self._last_newnym = 0.0
 
-  def load_conf(self, configtext):
+  async def load_conf(self, configtext):
     """
     Sends the configuration text to Tor and loads it as if it has been read from
     the torrc.
@@ -3262,7 +3262,7 @@ class Controller(BaseController):
     :raises: :class:`stem.ControllerError` if the call fails
     """
 
-    response = self.msg('LOADCONF\n%s' % configtext)
+    response = await self.msg('LOADCONF\n%s' % configtext)
     stem.response.convert('SINGLELINE', response)
 
     if response.code in ('552', '553'):
@@ -3272,7 +3272,7 @@ class Controller(BaseController):
     elif not response.is_ok():
       raise stem.ProtocolError('+LOADCONF Received unexpected response\n%s' % str(response))
 
-  def save_conf(self, force = False):
+  async def save_conf(self, force = False):
     """
     Saves the current configuration options into the active torrc file.
 
@@ -3288,7 +3288,7 @@ class Controller(BaseController):
         the configuration file
     """
 
-    response = self.msg('SAVECONF FORCE' if force else 'SAVECONF')
+    response = await self.msg('SAVECONF FORCE' if force else 'SAVECONF')
     stem.response.convert('SINGLELINE', response)
 
     if response.is_ok():
