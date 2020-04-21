@@ -3764,7 +3764,7 @@ class Controller(BaseController):
 
     return response.entries
 
-  def drop_guards(self):
+  async def drop_guards(self):
     """
     Drops our present guard nodes and picks a new set.
 
@@ -3773,7 +3773,7 @@ class Controller(BaseController):
     :raises: :class:`stem.ControllerError` if Tor couldn't fulfill the request
     """
 
-    self.msg('DROPGUARDS')
+    await self.msg('DROPGUARDS')
 
   async def _post_authentication(self):
     await super(Controller, self)._post_authentication()
