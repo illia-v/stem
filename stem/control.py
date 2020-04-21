@@ -3349,7 +3349,7 @@ class Controller(BaseController):
     self._enabled_features += [entry.upper() for entry in features]
 
   @with_default()
-  def get_circuit(self, circuit_id, default = UNDEFINED):
+  async def get_circuit(self, circuit_id, default = UNDEFINED):
     """
     get_circuit(circuit_id, default = UNDEFINED)
 
@@ -3367,14 +3367,14 @@ class Controller(BaseController):
       An exception is only raised if we weren't provided a default response.
     """
 
-    for circ in self.get_circuits():
+    for circ in await self.get_circuits():
       if circ.id == circuit_id:
         return circ
 
     raise ValueError("Tor currently does not have a circuit with the id of '%s'" % circuit_id)
 
   @with_default()
-  def get_circuits(self, default = UNDEFINED):
+  async def get_circuits(self, default = UNDEFINED):
     """
     get_circuits(default = UNDEFINED)
 
@@ -3388,10 +3388,10 @@ class Controller(BaseController):
     """
 
     circuits = []
-    response = self.get_info('circuit-status')
+    response = await self.get_info('circuit-status')
 
     for circ in response.splitlines():
-      circ_message = stem.socket.recv_message(io.BytesIO(stem.util.str_tools._to_bytes('650 CIRC %s\r\n' % circ)))
+      circ_message = await stem.socket.recv_message(io.BytesIO(stem.util.str_tools._to_bytes('650 CIRC %s\r\n' % circ)))
       stem.response.convert('EVENT', circ_message)
       circuits.append(circ_message)
 
