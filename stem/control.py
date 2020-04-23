@@ -992,7 +992,7 @@ class BaseController(object):
           self._event_notice.clear()
 
 
-class Controller(BaseController):
+class AsyncController(BaseController):
   """
   Connection with Tor's control socket. This is built on top of the
   BaseController and provides a more user friendly API for library users.
@@ -1030,7 +1030,7 @@ class Controller(BaseController):
     else:
       control_port = stem.socket.ControlPort(address, port)
 
-    return Controller(control_port)
+    return AsyncController(control_port)
 
   @staticmethod
   def from_socket_file(path = '/var/run/tor/control'):
@@ -1045,7 +1045,7 @@ class Controller(BaseController):
     """
 
     control_socket = stem.socket.ControlSocketFile(path)
-    return Controller(control_socket)
+    return AsyncController(control_socket)
 
   def __init__(self, control_socket, is_authenticated = False):
     self._is_caching_enabled = True
@@ -1063,7 +1063,7 @@ class Controller(BaseController):
     self._last_address_exc = None
     self._last_fingerprint_exc = None
 
-    super(Controller, self).__init__(control_socket, is_authenticated)
+    super(AsyncController, self).__init__(control_socket, is_authenticated)
 
     def _sighup_listener(event):
       if event.signal == Signal.RELOAD:
@@ -1097,7 +1097,7 @@ class Controller(BaseController):
 
   async def close(self):
     self.clear_cache()
-    await super(Controller, self).close()
+    await super(AsyncController, self).close()
 
   async def authenticate(self, *args, **kwargs):
     """
@@ -3776,7 +3776,7 @@ class Controller(BaseController):
     await self.msg('DROPGUARDS')
 
   async def _post_authentication(self):
-    await super(Controller, self)._post_authentication()
+    await super(AsyncController, self)._post_authentication()
 
     # try to re-attach event listeners to the new instance
 
