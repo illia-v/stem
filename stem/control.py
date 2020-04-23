@@ -994,14 +994,9 @@ class BaseController(_BaseControllerSocketMixin):
           self._event_notice.clear()
 
 
-class AsyncController(BaseController):
-  """
-  Connection with Tor's control socket. This is built on top of the
-  BaseController and provides a more user friendly API for library users.
-  """
-
-  @staticmethod
-  def from_port(address = '127.0.0.1', port = 'default'):
+class _ControllerClassMethodMixin:
+  @classmethod
+  def from_port(cls, address='127.0.0.1', port='default'):
     """
     Constructs a :class:`~stem.socket.ControlPort` based Controller.
 
@@ -1032,10 +1027,10 @@ class AsyncController(BaseController):
     else:
       control_port = stem.socket.ControlPort(address, port)
 
-    return AsyncController(control_port)
+    return cls(control_port)
 
-  @staticmethod
-  def from_socket_file(path = '/var/run/tor/control'):
+  @classmethod
+  def from_socket_file(cls, path='/var/run/tor/control'):
     """
     Constructs a :class:`~stem.socket.ControlSocketFile` based Controller.
 
@@ -1047,7 +1042,14 @@ class AsyncController(BaseController):
     """
 
     control_socket = stem.socket.ControlSocketFile(path)
-    return AsyncController(control_socket)
+    return cls(control_socket)
+
+
+class AsyncController(BaseController):
+  """
+  Connection with Tor's control socket. This is built on top of the
+  BaseController and provides a more user friendly API for library users.
+  """
 
   def __init__(self, control_socket, is_authenticated = False):
     self._is_caching_enabled = True
