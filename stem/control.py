@@ -3898,6 +3898,17 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
       self._asyncio_loop,
     ).result()
 
+  def _execute_async_generator_method(self, method_name, *args, **kwargs):
+    async def convert_async_generator(generator):
+      return iter([d async for d in generator])
+
+    return asyncio.run_coroutine_threadsafe(
+      convert_async_generator(
+        getattr(self._async_controller, method_name)(*args, **kwargs),
+      ),
+      self._asyncio_loop,
+    ).result()
+
   def msg(self, message):
     return self._execute_async_method('msg', message)
 
@@ -3906,6 +3917,9 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
 
   def connect(self):
     self._execute_async_method('connect')
+
+  def reconnect(self, *args, **kwargs):
+    self._execute_async_method('reconnect', *args, **kwargs)
 
   def close(self):
     self._execute_async_method('close')
@@ -3922,6 +3936,177 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
 
   def remove_status_listener(self, callback):
     self._async_controller.remove_status_listener(callback)
+
+  def authenticate(self, *args, **kwargs):
+    self._execute_async_method('authenticate', *args, **kwargs)
+
+  def get_info(self, params, default = UNDEFINED, get_bytes = False):
+    return self._execute_async_method('get_info', params, default, get_bytes)
+
+  def get_version(self, default = UNDEFINED):
+    return self._execute_async_method('get_version', default)
+
+  def get_exit_policy(self, default = UNDEFINED):
+    return self._execute_async_method('get_exit_policy', default)
+
+  def get_ports(self, listener_type, default = UNDEFINED):
+    return self._execute_async_method('get_ports', listener_type, default)
+
+  def get_listeners(self, listener_type, default = UNDEFINED):
+    return self._execute_async_method('get_listeners', listener_type, default)
+
+  def get_accounting_stats(self, default = UNDEFINED):
+    return self._execute_async_method('get_accounting_stats', default)
+
+  def get_protocolinfo(self, default = UNDEFINED):
+    return self._execute_async_method('get_protocolinfo', default)
+
+  def get_user(self, default = UNDEFINED):
+    return self._execute_async_method('get_user', default)
+
+  def get_pid(self, default = UNDEFINED):
+    return self._execute_async_method('get_pid', default)
+
+  def get_start_time(self, default = UNDEFINED):
+    return self._execute_async_method('get_start_time', default)
+
+  def get_uptime(self, default = UNDEFINED):
+    return self._execute_async_method('get_uptime', default)
+
+  def is_user_traffic_allowed(self):
+    return self._execute_async_method('is_user_traffic_allowed')
+
+  def get_microdescriptor(self, relay = None, default = UNDEFINED):
+    return self._execute_async_method('get_microdescriptor', relay, default)
+
+  def get_microdescriptors(self, default = UNDEFINED):
+    return self._execute_async_generator_method('get_microdescriptors', default)
+
+  def get_server_descriptor(self, relay = None, default = UNDEFINED):
+    return self._execute_async_method('get_server_descriptor', relay, default)
+
+  def get_server_descriptors(self, default = UNDEFINED):
+    return self._execute_async_generator_method('get_server_descriptors', default)
+
+  def get_network_status(self, relay = None, default = UNDEFINED):
+    return self._execute_async_method('get_network_status', relay, default)
+
+  def get_network_statuses(self, default = UNDEFINED):
+    return self._execute_async_generator_method('get_network_statuses', default)
+
+  def get_hidden_service_descriptor(self, address, default = UNDEFINED, servers = None, await_result = True, timeout = None):
+    return self._execute_async_method('get_hidden_service_descriptor', address, default, servers, await_result, timeout)
+
+  def get_conf(self, param, default = UNDEFINED, multiple = False):
+    return self._execute_async_method('get_conf', param, default, multiple)
+
+  def get_conf_map(self, params, default = UNDEFINED, multiple = True):
+    return self._execute_async_method('get_conf_map', params, default, multiple)
+
+  def is_set(self, param, default = UNDEFINED):
+    return self._execute_async_method('is_set', param, default)
+
+  def set_conf(self, param, value):
+    self._execute_async_method('set_conf', param, value)
+
+  def reset_conf(self, *params):
+    self._execute_async_method('reset_conf', *params)
+
+  def set_options(self, params, reset = False):
+    self._execute_async_method('set_options', params, reset)
+
+  def get_hidden_service_conf(self, default = UNDEFINED):
+    return self._execute_async_method('get_hidden_service_conf', default)
+
+  def set_hidden_service_conf(self, conf):
+    self._execute_async_method('set_hidden_service_conf', conf)
+
+  def create_hidden_service(self, path, port, target_address = None, target_port = None, auth_type = None, client_names = None):
+    return self._execute_async_method('create_hidden_service', path, port, target_address, target_port, auth_type, client_names)
+
+  def remove_hidden_service(self, path, port = None):
+    return self._execute_async_method('remove_hidden_service', path, port)
+
+  def list_ephemeral_hidden_services(self, default = UNDEFINED, our_services = True, detached = False):
+    return self._execute_async_method('list_ephemeral_hidden_services', default, our_services, detached)
+
+  def create_ephemeral_hidden_service(self, ports, key_type = 'NEW', key_content = 'BEST', discard_key = False, detached = False, await_publication = False, timeout = None, basic_auth = None, max_streams = None):
+    return self._execute_async_method('create_ephemeral_hidden_service', ports, key_type, key_content, discard_key, detached, await_publication, timeout, basic_auth, max_streams)
+
+  def remove_ephemeral_hidden_service(self, service_id):
+    return self._execute_async_method('remove_ephemeral_hidden_service', service_id)
+
+  def add_event_listener(self, listener, *events):
+    self._execute_async_method('add_event_listener', listener, *events)
+
+  def remove_event_listener(self, listener):
+    self._execute_async_method('remove_event_listener', listener)
+
+  def is_caching_enabled(self):
+    return self._async_controller.is_caching_enabled()
+
+  def set_caching(self, enabled):
+    self._async_controller.set_caching(enabled)
+
+  def clear_cache(self):
+    self._async_controller.clear_cache()
+
+  def load_conf(self, configtext):
+    self._execute_async_method('load_conf', configtext)
+
+  def save_conf(self, force = False):
+    return self._execute_async_method('save_conf', force)
+
+  def is_feature_enabled(self, feature):
+    return self._async_controller.is_feature_enabled(feature)
+
+  def enable_feature(self, features):
+    self._async_controller.enable_feature(features)
+
+  def get_circuit(self, circuit_id, default = UNDEFINED):
+    return self._execute_async_method('get_circuit', circuit_id, default)
+
+  def get_circuits(self, default = UNDEFINED):
+    return self._execute_async_method('get_circuits', default)
+
+  def new_circuit(self, path = None, purpose = 'general', await_build = False, timeout = None):
+    return self._execute_async_method('new_circuit', path, purpose, await_build, timeout)
+
+  def extend_circuit(self, circuit_id = '0', path = None, purpose = 'general', await_build = False, timeout = None):
+    return self._execute_async_method('extend_circuit', circuit_id, path, purpose, await_build, timeout)
+
+  def repurpose_circuit(self, circuit_id, purpose):
+    self._execute_async_method('repurpose_circuit', circuit_id, purpose)
+
+  def close_circuit(self, circuit_id, flag = ''):
+    self._execute_async_method('close_circuit', circuit_id, flag)
+
+  def get_streams(self, default = UNDEFINED):
+    return self._execute_async_method('get_streams', default)
+
+  def attach_stream(self, stream_id, circuit_id, exiting_hop = None):
+    self._execute_async_method('attach_stream', stream_id, circuit_id, exiting_hop)
+
+  def close_stream(self, stream_id, reason = stem.RelayEndReason.MISC, flag = ''):
+    self._execute_async_method('close_stream', stream_id, reason, flag)
+
+  def signal(self, signal):
+    self._execute_async_method('signal', signal)
+
+  def is_newnym_available(self):
+    return self._async_controller.is_newnym_available()
+
+  def get_newnym_wait(self):
+    return self._async_controller.get_newnym_wait()
+
+  def get_effective_rate(self, default = UNDEFINED, burst = False):
+    return self._execute_async_method('get_effective_rate', default, burst)
+
+  def map_address(self, mapping):
+    return self._execute_async_method('map_address', mapping)
+
+  def drop_guards(self):
+    self._execute_async_method('drop_guards')
 
   def __enter__(self):
     return self
