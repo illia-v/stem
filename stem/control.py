@@ -3901,6 +3901,9 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
   def msg(self, message):
     return self._execute_async_method('msg', message)
 
+  def is_authenticated(self):
+    return self._async_controller.is_authenticated()
+
   def connect(self):
     self._execute_async_method('connect')
 
@@ -3910,6 +3913,15 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
     if self._asyncio_thread.is_alive():
       self._asyncio_thread.join()
     self._asyncio_loop.close()
+
+  def get_latest_heartbeat(self):
+    return self._async_controller.get_latest_heartbeat()
+
+  def add_status_listener(self, callback, spawn = True):
+    self._async_controller.add_status_listener(callback, spawn)
+
+  def remove_status_listener(self, callback):
+    self._async_controller.remove_status_listener(callback)
 
   def __enter__(self):
     return self
