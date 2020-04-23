@@ -3881,6 +3881,43 @@ class AsyncController(BaseController):
     return (set_events, failed_events)
 
 
+class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
+  def __init__(self, control_socket, is_authenticated = False):
+    self._asyncio_loop = asyncio.get_event_loop()
+
+    self._asyncio_thread = threading.Thread(target=self._asyncio_loop.run_forever, name='asyncio')
+    self._asyncio_thread.setDaemon(True)
+    self._asyncio_thread.start()
+
+    self._async_controller = AsyncController(control_socket, is_authenticated)
+    self._socket = self._async_controller._socket
+
+  def _execute_async_method(self, method_name, *args, **kwargs):
+    return asyncio.run_coroutine_threadsafe(
+      getattr(self._async_controller, method_name)(*args, **kwargs),
+      self._asyncio_loop,
+    ).result()
+
+  def msg(self, message):
+    return self._execute_async_method('msg', message)
+
+  def connect(self):
+    self._execute_async_method('connect')
+
+  def close(self):
+    self._execute_async_method('close')
+    self._asyncio_loop.call_soon_threadsafe(self._asyncio_loop.stop)
+    if self._asyncio_thread.is_alive():
+      self._asyncio_thread.join()
+    self._asyncio_loop.close()
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    self.close()
+
+
 def _parse_circ_path(path):
   """
   Parses a circuit path as a list of **(fingerprint, nickname)** tuples. Tor
