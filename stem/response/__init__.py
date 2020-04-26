@@ -164,7 +164,7 @@ class ControlMessage(object):
 
       content = re.sub('([\r]?)\n', '\r\n', content)
 
-    msg = stem.socket.recv_message(io.BytesIO(stem.util.str_tools._to_bytes(content)), arrived_at = kwargs.pop('arrived_at', None))
+    msg = stem.socket.recv_message_from_bytes_io(io.BytesIO(stem.util.str_tools._to_bytes(content)), arrived_at = kwargs.pop('arrived_at', None))
 
     if msg_type is not None:
       convert(msg_type, msg, **kwargs)
