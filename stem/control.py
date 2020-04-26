@@ -931,7 +931,6 @@ class BaseController(_BaseControllerSocketMixin):
     for coroutine in (self._reader_loop(), self._event_loop()):
       self._asyncio_loop_tasks.append(self._asyncio_loop.create_task(coroutine))
 
-
   async def _reader_loop(self):
     """
     Continually pulls from the control socket, directing the messages into
