@@ -127,16 +127,16 @@ class ControlInterpreter(code.InteractiveConsole):
     # Intercept events our controller hears about at a pretty low level since
     # the user will likely be requesting them by direct 'SETEVENTS' calls.
 
-    handle_event_real = self._controller._handle_event
+    handle_event_real = self._controller._async_controller._handle_event
 
-    def handle_event_wrapper(event_message):
-      handle_event_real(event_message)
+    async def handle_event_wrapper(event_message):
+      await handle_event_real(event_message)
       self._received_events.insert(0, event_message)
 
       if len(self._received_events) > MAX_EVENTS:
         self._received_events.pop()
 
-    self._controller._handle_event = handle_event_wrapper
+    self._controller._async_controller._handle_event = handle_event_wrapper
 
   def get_events(self, *event_types):
     events = list(self._received_events)
