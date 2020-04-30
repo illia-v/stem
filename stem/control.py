@@ -3984,8 +3984,6 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
 
   def close(self):
     self._execute_async_method('close')
-    if self._async_controller_thread.is_alive():
-      self._async_controller_thread.join()
 
   def get_latest_heartbeat(self):
     return self._async_controller.get_latest_heartbeat()
@@ -4166,6 +4164,10 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
 
   def drop_guards(self):
     self._execute_async_method('drop_guards')
+
+  def __del__(self):
+    if self._asyncio_loop.is_running():
+      self._asyncio_loop.call_soon_threadsafe(self._asyncio_loop.stop)
 
   def __enter__(self):
     return self
