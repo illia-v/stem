@@ -1014,7 +1014,10 @@ async def _msg(controller, message):
     await controller.send(message)
     return await controller.recv()
   else:
-    return await controller.msg(message)
+    message = controller.msg(message)
+    if asyncio.iscoroutine(message):
+      message = await message
+    return message
 
 
 def _connection_for_default_port(address):
