@@ -637,7 +637,6 @@ class BaseController(_BaseControllerSocketMixin):
     self._socket = control_socket
 
     self._asyncio_loop = asyncio.get_event_loop()
-    self._asyncio_loop_tasks = []
 
     self._msg_lock = _MsgLock()
 
@@ -780,9 +779,6 @@ class BaseController(_BaseControllerSocketMixin):
     """
 
     await self._socket.close()
-
-    for task in self._asyncio_loop_tasks:
-      task.cancel()
 
     # Join on any outstanding state change listeners. Closing is a state change
     # of its own, so if we have any listeners it's quite likely there's some
@@ -948,7 +944,7 @@ class BaseController(_BaseControllerSocketMixin):
     """
 
     for coroutine in (self._reader_loop(), self._event_loop()):
-      self._asyncio_loop_tasks.append(self._asyncio_loop.create_task(coroutine))
+      self._asyncio_loop.create_task(coroutine)
 
   async def _reader_loop(self):
     """
