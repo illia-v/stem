@@ -253,7 +253,7 @@ def connect(control_port = ('127.0.0.1', 'default'), control_socket = '/var/run/
   if controller is None or not issubclass(controller, stem.control.Controller):
     raise ValueError('Controller should be a stem.control.BaseController subclass.')
 
-  async_controller_thread = stem.control._AsyncControllerThread()
+  async_controller_thread = stem.util.ThreadForWrappedAsyncClass()
   async_controller_thread.start()
 
   connect_coroutine = _connect_async(control_port, control_socket, password, password_prompt, chroot_path, controller)

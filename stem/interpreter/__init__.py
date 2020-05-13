@@ -129,7 +129,7 @@ def main():
         async def handle_event(event_message):
           print(format(str(event_message), *STANDARD_OUTPUT))
 
-        controller._async_controller._handle_event = handle_event
+        controller._wrapped_instance._handle_event = handle_event
 
         if sys.stdout.isatty():
           events = args.run_cmd.upper().split(' ', 1)[1]

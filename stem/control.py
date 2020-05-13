@@ -549,29 +549,6 @@ def event_description(event):
   return EVENT_DESCRIPTIONS.get(event.lower())
 
 
-class _MsgLock:
-  __slots__ = ('_r_lock', '_async_lock')
-
-  def __init__(self):
-    self._r_lock = threading.RLock()
-    self._async_lock = asyncio.Lock()
-
-  async def acquire(self):
-    await self._async_lock.acquire()
-    self._r_lock.acquire()
-
-  def release(self):
-    self._r_lock.release()
-    self._async_lock.release()
-
-  async def __aenter__(self):
-    await self.acquire()
-    return self
-
-  async def __aexit__(self, exc_type, exc_val, exc_tb):
-    self.release()
-
-
 class _BaseControllerSocketMixin:
   def is_alive(self):
     """
@@ -640,7 +617,7 @@ class BaseController(_BaseControllerSocketMixin):
 
     self._asyncio_loop = asyncio.get_event_loop()
 
-    self._msg_lock = _MsgLock()
+    self._msg_lock = stem.util.CombinedReentrantAndAsyncioLock()
 
     self._status_listeners = []  # tuples of the form (callback, spawn_thread)
     self._status_listeners_lock = threading.RLock()
@@ -3899,22 +3876,7 @@ class AsyncController(_ControllerClassMethodMixin, BaseController):
     return (set_events, failed_events)
 
 
-class _AsyncControllerThread(threading.Thread):
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, *kwargs)
-    self.loop = asyncio.new_event_loop()
-    self.setDaemon(True)
-
-  def run(self):
-    self.loop.run_forever()
-
-  def join(self, timeout = None):
-    self.loop.call_soon_threadsafe(self.loop.stop)
-    super().join(timeout)
-    self.loop.close()
-
-
-class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
+class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin, stem.util.AsyncClassWrapper):
   @classmethod
   def from_port(cls, address='127.0.0.1', port='default'):
     instance = super().from_port(address, port)
@@ -3929,48 +3891,19 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
 
   def __init__(self, control_socket, is_authenticated = False, started_async_controller_thread = None):
     if started_async_controller_thread:
-      self._async_controller_thread = started_async_controller_thread
+      self._thread_for_wrapped_class = started_async_controller_thread
     else:
-      self._async_controller_thread = _AsyncControllerThread()
-      self._async_controller_thread.start()
-    self._asyncio_loop = self._async_controller_thread.loop
+      self._thread_for_wrapped_class = stem.util.ThreadForWrappedAsyncClass()
+      self._thread_for_wrapped_class.start()
 
-    self._async_controller = self._init_async_controller(control_socket, is_authenticated)
-    self._socket = self._async_controller._socket
-
-  def _init_async_controller(self, control_socket, is_authenticated):
-    # The asynchronous controller should be initialized in the thread where its
-    # methods will be executed.
-    if self._async_controller_thread != threading.current_thread():
-      async def init_async_controller():
-        return AsyncController(control_socket, is_authenticated)
-
-      return asyncio.run_coroutine_threadsafe(init_async_controller(), self._asyncio_loop).result()
-
-    return AsyncController(control_socket, is_authenticated)
-
-  def _execute_async_method(self, method_name, *args, **kwargs):
-    return asyncio.run_coroutine_threadsafe(
-      getattr(self._async_controller, method_name)(*args, **kwargs),
-      self._asyncio_loop,
-    ).result()
-
-  def _execute_async_generator_method(self, method_name, *args, **kwargs):
-    async def convert_async_generator(generator):
-      return iter([d async for d in generator])
-
-    return asyncio.run_coroutine_threadsafe(
-      convert_async_generator(
-        getattr(self._async_controller, method_name)(*args, **kwargs),
-      ),
-      self._asyncio_loop,
-    ).result()
+    self._wrapped_instance = self._init_async_class(AsyncController, control_socket, is_authenticated)
+    self._socket = self._wrapped_instance._socket
 
   def msg(self, message):
     return self._execute_async_method('msg', message)
 
   def is_authenticated(self):
-    return self._async_controller.is_authenticated()
+    return self._wrapped_instance.is_authenticated()
 
   def connect(self):
     self._execute_async_method('connect')
@@ -3982,13 +3915,13 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
     self._execute_async_method('close')
 
   def get_latest_heartbeat(self):
-    return self._async_controller.get_latest_heartbeat()
+    return self._wrapped_instance.get_latest_heartbeat()
 
   def add_status_listener(self, callback, spawn = True):
-    self._async_controller.add_status_listener(callback, spawn)
+    self._wrapped_instance.add_status_listener(callback, spawn)
 
   def remove_status_listener(self, callback):
-    self._async_controller.remove_status_listener(callback)
+    self._wrapped_instance.remove_status_listener(callback)
 
   def authenticate(self, *args, **kwargs):
     self._execute_async_method('authenticate', *args, **kwargs)
@@ -4096,13 +4029,13 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
     self._execute_async_method('remove_event_listener', listener)
 
   def is_caching_enabled(self):
-    return self._async_controller.is_caching_enabled()
+    return self._wrapped_instance.is_caching_enabled()
 
   def set_caching(self, enabled):
-    self._async_controller.set_caching(enabled)
+    self._wrapped_instance.set_caching(enabled)
 
   def clear_cache(self):
-    self._async_controller.clear_cache()
+    self._wrapped_instance.clear_cache()
 
   def load_conf(self, configtext):
     self._execute_async_method('load_conf', configtext)
@@ -4111,10 +4044,10 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
     return self._execute_async_method('save_conf', force)
 
   def is_feature_enabled(self, feature):
-    return self._async_controller.is_feature_enabled(feature)
+    return self._wrapped_instance.is_feature_enabled(feature)
 
   def enable_feature(self, features):
-    self._async_controller.enable_feature(features)
+    self._wrapped_instance.enable_feature(features)
 
   def get_circuit(self, circuit_id, default = UNDEFINED):
     return self._execute_async_method('get_circuit', circuit_id, default)
@@ -4147,10 +4080,10 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
     self._execute_async_method('signal', signal)
 
   def is_newnym_available(self):
-    return self._async_controller.is_newnym_available()
+    return self._wrapped_instance.is_newnym_available()
 
   def get_newnym_wait(self):
-    return self._async_controller.get_newnym_wait()
+    return self._wrapped_instance.get_newnym_wait()
 
   def get_effective_rate(self, default = UNDEFINED, burst = False):
     return self._execute_async_method('get_effective_rate', default, burst)
@@ -4162,8 +4095,9 @@ class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin):
     self._execute_async_method('drop_guards')
 
   def __del__(self):
-    if self._asyncio_loop.is_running():
-      self._asyncio_loop.call_soon_threadsafe(self._asyncio_loop.stop)
+    loop = self._thread_for_wrapped_class.loop
+    if loop.is_running():
+      loop.call_soon_threadsafe(loop.stop)
 
   def __enter__(self):
     return self
