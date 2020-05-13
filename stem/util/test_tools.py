@@ -244,7 +244,7 @@ class TimedTestRunner(unittest.TextTestRunner):
           TEST_RUNTIMES[self.id()] = time.time() - start_time
           return result
 
-        def assertRaisesWith(self, exc_type, exc_msg, func, *args, **kwargs):
+        def assertRaisesWith(self, exc_type, exc_msg, *args, **kwargs):
           """
           Asserts the given invokation raises the expected excepiton. This is
           similar to unittest's assertRaises and assertRaisesRegexp, but checks
@@ -255,7 +255,7 @@ class TimedTestRunner(unittest.TextTestRunner):
           vended API then please let us know.
           """
 
-          return self.assertRaisesRegexp(exc_type, '^%s$' % re.escape(exc_msg), func, *args, **kwargs)
+          return self.assertRaisesRegexp(exc_type, '^%s$' % re.escape(exc_msg), *args, **kwargs)
 
         def id(self):
           return '%s.%s.%s' % (original_type.__module__, original_type.__name__, self._testMethodName)

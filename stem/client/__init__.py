@@ -26,7 +26,6 @@ a wrapper for :class:`~stem.socket.RelaySocket`, much the same way as
 """
 
 import hashlib
-import threading
 
 import stem
 import stem.client.cell
@@ -67,11 +66,11 @@ class Relay(object):
     self.link_protocol = LinkProtocol(link_protocol)
     self._orport = orport
     self._orport_buffer = b''  # unread bytes
-    self._orport_lock = threading.RLock()
+    self._orport_lock = stem.util.CombinedReentrantAndAsyncioLock()
     self._circuits = {}
 
   @staticmethod
-  def connect(address, port, link_protocols = DEFAULT_LINK_PROTOCOLS):
+  async def connect(address, port, link_protocols = DEFAULT_LINK_PROTOCOLS):
     """
     Establishes a connection with the given ORPort.
 
@@ -93,8 +92,9 @@ class Relay(object):
 
     try:
       conn = stem.socket.RelaySocket(address, port)
+      await conn.connect()
     except stem.SocketError as exc:
-      if 'Connection refused' in str(exc):
+      if 'Connect call failed' in str(exc):
         raise stem.SocketError("Failed to connect to %s:%i. Maybe it isn't an ORPort?" % (address, port))
 
       # If not an ORPort (for instance, mistakenly connecting to a ControlPort
@@ -118,21 +118,21 @@ class Relay(object):
     #   first VERSIONS cell, always have CIRCID_LEN == 2 for backward
     #   compatibility.
 
-    conn.send(stem.client.cell.VersionsCell(link_protocols).pack(2))
-    response = conn.recv()
+    await conn.send(stem.client.cell.VersionsCell(link_protocols).pack(2))
+    response = await conn.recv()
 
     # Link negotiation ends right away if we lack a common protocol
     # version. (#25139)
 
     if not response:
-      conn.close()
+      await conn.close()
       raise stem.SocketError('Unable to establish a common link protocol with %s:%i' % (address, port))
 
     versions_reply = stem.client.cell.Cell.pop(response, 2)[0]
     common_protocols = set(link_protocols).intersection(versions_reply.versions)
 
     if not common_protocols:
-      conn.close()
+      await conn.close()
       raise stem.SocketError('Unable to find a common link protocol. We support %s but %s:%i supports %s.' % (', '.join(link_protocols), address, port, ', '.join(versions_reply.versions)))
 
     # Establishing connections requires sending a NETINFO, but including our
@@ -140,11 +140,11 @@ class Relay(object):
     # where it would help.
 
     link_protocol = max(common_protocols)
-    conn.send(stem.client.cell.NetinfoCell(relay_addr, []).pack(link_protocol))
+    await conn.send(stem.client.cell.NetinfoCell(relay_addr, []).pack(link_protocol))
 
     return Relay(conn, link_protocol)
 
-  def _recv(self, raw = False):
+  async def _recv(self, raw = False):
     """
     Reads the next cell from our ORPort. If none is present this blocks
     until one is available.
@@ -154,13 +154,13 @@ class Relay(object):
     :returns: next :class:`~stem.client.cell.Cell`
     """
 
-    with self._orport_lock:
+    async with self._orport_lock:
       # cells begin with [circ_id][cell_type][...]
 
       circ_id_size = self.link_protocol.circ_id_size.size
 
       while len(self._orport_buffer) < (circ_id_size + CELL_TYPE_SIZE.size):
-        self._orport_buffer += self._orport.recv()  # read until we know the cell type
+        self._orport_buffer += await self._orport.recv()  # read until we know the cell type
 
       cell_type = Cell.by_value(CELL_TYPE_SIZE.pop(self._orport_buffer[circ_id_size:])[0])
 
@@ -170,13 +170,13 @@ class Relay(object):
         # variable length, our next field is the payload size
 
         while len(self._orport_buffer) < (circ_id_size + CELL_TYPE_SIZE.size + FIXED_PAYLOAD_LEN.size):
-          self._orport_buffer += self._orport.recv()  # read until we know the cell size
+          self._orport_buffer += await self._orport.recv()  # read until we know the cell size
 
         payload_len = FIXED_PAYLOAD_LEN.pop(self._orport_buffer[circ_id_size + CELL_TYPE_SIZE.size:])[0]
         cell_size = circ_id_size + CELL_TYPE_SIZE.size + FIXED_PAYLOAD_LEN.size + payload_len
 
       while len(self._orport_buffer) < cell_size:
-        self._orport_buffer += self._orport.recv()  # read until we have the full cell
+        self._orport_buffer += await self._orport.recv()  # read until we have the full cell
 
       if raw:
         content, self._orport_buffer = split(self._orport_buffer, cell_size)
@@ -185,7 +185,7 @@ class Relay(object):
         cell, self._orport_buffer = Cell.pop(self._orport_buffer, self.link_protocol)
         return cell
 
-  def _msg(self, cell):
+  async def _msg(self, cell):
     """
     Sends a cell on the ORPort and provides the response we receive in reply.
 
@@ -210,9 +210,9 @@ class Relay(object):
     :returns: **generator** with the cells received in reply
     """
 
-    self._orport.recv(timeout = 0)  # discard unread data
-    self._orport.send(cell.pack(self.link_protocol))
-    response = self._orport.recv(timeout = 1)
+    await self._orport.recv(timeout = 0)  # discard unread data
+    await self._orport.send(cell.pack(self.link_protocol))
+    response = await self._orport.recv(timeout = 1)
 
     for received_cell in stem.client.cell.Cell.pop(response, self.link_protocol):
       yield received_cell
@@ -239,27 +239,27 @@ class Relay(object):
 
     return self._orport.connection_time()
 
-  def close(self):
+  async def close(self):
     """
     Closes our socket connection. This is a pass-through for our socket's
     :func:`~stem.socket.BaseSocket.close` method.
     """
 
-    with self._orport_lock:
-      return self._orport.close()
+    async with self._orport_lock:
+      return await self._orport.close()
 
-  def create_circuit(self):
+  async def create_circuit(self):
     """
     Establishes a new circuit.
     """
 
-    with self._orport_lock:
+    async with self._orport_lock:
       circ_id = max(self._circuits) + 1 if self._circuits else self.link_protocol.first_circ_id
 
       create_fast_cell = stem.client.cell.CreateFastCell(circ_id)
       created_fast_cell = None
 
-      for cell in self._msg(create_fast_cell):
+      async for cell in self._msg(create_fast_cell):
         if isinstance(cell, stem.client.cell.CreatedFastCell):
           created_fast_cell = cell
           break
@@ -277,16 +277,16 @@ class Relay(object):
 
       return circ
 
-  def __iter__(self):
-    with self._orport_lock:
+  async def __aiter__(self):
+    async with self._orport_lock:
       for circ in self._circuits.values():
         yield circ
 
-  def __enter__(self):
+  async def __aenter__(self):
     return self
 
-  def __exit__(self, exit_type, value, traceback):
-    self.close()
+  async def __aexit__(self, exit_type, value, traceback):
+    await self.close()
 
 
 class Circuit(object):
@@ -320,7 +320,7 @@ class Circuit(object):
     self.forward_key = Cipher(algorithms.AES(kdf.forward_key), ctr, default_backend()).encryptor()
     self.backward_key = Cipher(algorithms.AES(kdf.backward_key), ctr, default_backend()).decryptor()
 
-  def directory(self, request, stream_id = 0):
+  async def directory(self, request, stream_id = 0):
     """
     Request descriptors from the relay.
 
@@ -330,9 +330,9 @@ class Circuit(object):
     :returns: **str** with the requested descriptor data
     """
 
-    with self.relay._orport_lock:
-      self._send(RelayCommand.BEGIN_DIR, stream_id = stream_id)
-      self._send(RelayCommand.DATA, request, stream_id = stream_id)
+    async with self.relay._orport_lock:
+      await self._send(RelayCommand.BEGIN_DIR, stream_id = stream_id)
+      await self._send(RelayCommand.DATA, request, stream_id = stream_id)
 
       response = []
 
@@ -340,7 +340,7 @@ class Circuit(object):
         # Decrypt relay cells received in response. Our digest/key only
         # updates when handled successfully.
 
-        encrypted_cell = self.relay._recv(raw = True)
+        encrypted_cell = await self.relay._recv(raw = True)
 
         decrypted_cell, backward_key, backward_digest = stem.client.cell.RelayCell.decrypt(self.relay.link_protocol, encrypted_cell, self.backward_key, self.backward_digest)
 
@@ -355,7 +355,7 @@ class Circuit(object):
         else:
           response.append(decrypted_cell)
 
-  def _send(self, command, data = '', stream_id = 0):
+  async def _send(self, command, data = '', stream_id = 0):
     """
     Sends a message over the circuit.
 
@@ -364,24 +364,24 @@ class Circuit(object):
     :param int stream_id: specific stream this concerns
     """
 
-    with self.relay._orport_lock:
+    async with self.relay._orport_lock:
       # Encrypt and send the cell. Our digest/key only updates if the cell is
       # successfully sent.
 
       cell = stem.client.cell.RelayCell(self.id, command, data, stream_id = stream_id)
       payload, forward_key, forward_digest = cell.encrypt(self.relay.link_protocol, self.forward_key, self.forward_digest)
-      self.relay._orport.send(payload)
+      await self.relay._orport.send(payload)
 
       self.forward_digest = forward_digest
       self.forward_key = forward_key
 
-  def close(self):
-    with self.relay._orport_lock:
-      self.relay._orport.send(stem.client.cell.DestroyCell(self.id).pack(self.relay.link_protocol))
+  async def close(self):
+    async with self.relay._orport_lock:
+      await self.relay._orport.send(stem.client.cell.DestroyCell(self.id).pack(self.relay.link_protocol))
       del self.relay._circuits[self.id]
 
-  def __enter__(self):
+  async def __aenter__(self):
     return self
 
-  def __exit__(self, exit_type, value, traceback):
-    self.close()
+  async def __aexit__(self, exit_type, value, traceback):
+    await self.close()
