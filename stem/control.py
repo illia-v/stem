@@ -993,18 +993,20 @@ class BaseController(_BaseControllerSocketMixin):
           self._event_notice.clear()
 
 
-class _ControllerClassMethodMixin:
+class AsyncController(BaseController):
+  """
+  Connection with Tor's control socket. This is built on top of the
+  BaseController and provides a more user friendly API for library users.
+  """
+
   @classmethod
-  def from_port(cls, address: str = '127.0.0.1', port: Union[int, str] = 'default') -> Union['stem.control.AsyncController', 'stem.control.Controller']:
+  def from_port(cls, address: str = '127.0.0.1', port: Union[int, str] = 'default') -> 'AsyncController':
     """
-    Constructs a :class:`~stem.socket.ControlPort` based Controller.
+    Constructs a :class:`~stem.socket.ControlPort` based AsyncController.
 
     If the **port** is **'default'** then this checks on both 9051 (default
     for relays) and 9151 (default for the Tor Browser). This default may change
     in the future.
-
-    .. versionchanged:: 1.5.0
-       Use both port 9051 and 9151 by default.
 
     :param str address: ip address of the controller
     :param int port: port number of the controller
@@ -1014,24 +1016,13 @@ class _ControllerClassMethodMixin:
     :raises: :class:`stem.SocketError` if we're unable to establish a connection
     """
 
-    import stem.connection
-
-    if not stem.util.connection.is_valid_ipv4_address(address):
-      raise ValueError('Invalid IP address: %s' % address)
-    elif port != 'default' and not stem.util.connection.is_valid_port(port):
-      raise ValueError('Invalid port: %s' % port)
-
-    if port == 'default':
-      control_port = stem.connection._connection_for_default_port(address)
-    else:
-      control_port = stem.socket.ControlPort(address, int(port))
-
-    return cls(control_port)
+    control_socket = _init_control_port(address, port)
+    return cls(control_socket)
 
   @classmethod
-  def from_socket_file(cls, path: str = '/var/run/tor/control') -> Union['stem.control.AsyncController', 'stem.control.Controller']:
+  def from_socket_file(cls, path: str = '/var/run/tor/control') -> 'AsyncController':
     """
-    Constructs a :class:`~stem.socket.ControlSocketFile` based Controller.
+    Constructs a :class:`~stem.socket.ControlSocketFile` based AsyncController.
 
     :param str path: path where the control socket is located
 
@@ -1040,15 +1031,8 @@ class _ControllerClassMethodMixin:
     :raises: :class:`stem.SocketError` if we're unable to establish a connection
     """
 
-    control_socket = stem.socket.ControlSocketFile(path)
+    control_socket = _init_control_socket_file(path)
     return cls(control_socket)
-
-
-class AsyncController(_ControllerClassMethodMixin, BaseController):
-  """
-  Connection with Tor's control socket. This is built on top of the
-  BaseController and provides a more user friendly API for library users.
-  """
 
   def __init__(self, control_socket: stem.socket.ControlSocket, is_authenticated: bool = False) -> None:
     self._is_caching_enabled = True
@@ -3884,18 +3868,48 @@ class AsyncController(_ControllerClassMethodMixin, BaseController):
     return (set_events, failed_events)
 
 
-class Controller(_ControllerClassMethodMixin, _BaseControllerSocketMixin, stem.util.AsyncClassWrapper):
+class Controller(_BaseControllerSocketMixin, stem.util.AsyncClassWrapper):
   @classmethod
-  def from_port(cls, address: str = '127.0.0.1', port: Union[int, str] = 'default') -> 'stem.control.Controller':
-    instance = super().from_port(address, port)
-    instance.connect()
-    return instance
+  def from_port(cls, address: str = '127.0.0.1', port: Union[int, str] = 'default') -> 'Controller':
+    """
+    Constructs a :class:`~stem.socket.ControlPort` based Controller.
+
+    If the **port** is **'default'** then this checks on both 9051 (default
+    for relays) and 9151 (default for the Tor Browser). This default may change
+    in the future.
+
+    .. versionchanged:: 1.5.0
+       Use both port 9051 and 9151 by default.
+
+    :param str address: ip address of the controller
+    :param int port: port number of the controller
+
+    :returns: :class:`~stem.control.Controller` attached to the given port
+
+    :raises: :class:`stem.SocketError` if we're unable to establish a connection
+    """
+
+    control_socket = _init_control_port(address, port)
+    controller = cls(control_socket)
+    controller.connect()
+    return controller
 
   @classmethod
-  def from_socket_file(cls, path: str = '/var/run/tor/control') -> 'stem.control.Controller':
-    instance = super().from_socket_file(path)
-    instance.connect()
-    return instance
+  def from_socket_file(cls, path: str = '/var/run/tor/control') -> 'Controller':
+    """
+    Constructs a :class:`~stem.socket.ControlSocketFile` based Controller.
+
+    :param str path: path where the control socket is located
+
+    :returns: :class:`~stem.control.Controller` attached to the given socket file
+
+    :raises: :class:`stem.SocketError` if we're unable to establish a connection
+    """
+
+    control_socket = _init_control_socket_file(path)
+    controller = cls(control_socket)
+    controller.connect()
+    return controller
 
   def __init__(
       self,
@@ -4241,3 +4255,23 @@ async def _get_with_timeout(event_queue: asyncio.Queue, timeout: Optional[float]
     return await asyncio.wait_for(event_queue.get(), timeout=time_left)
   except asyncio.TimeoutError:
     raise stem.Timeout('Reached our %0.1f second timeout' % timeout)
+
+
+def _init_control_port(address: str, port: Union[int, str]) -> stem.socket.ControlPort:
+  import stem.connection
+
+  if not stem.util.connection.is_valid_ipv4_address(address):
+    raise ValueError('Invalid IP address: %s' % address)
+  elif port != 'default' and not stem.util.connection.is_valid_port(port):
+    raise ValueError('Invalid port: %s' % port)
+
+  if port == 'default':
+    control_port = stem.connection._connection_for_default_port(address)
+  else:
+    control_port = stem.socket.ControlPort(address, int(port))
+
+  return control_port
+
+
+def _init_control_socket_file(path: str) -> stem.socket.ControlSocketFile:
+  return stem.socket.ControlSocketFile(path)
