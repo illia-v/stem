@@ -15,31 +15,42 @@ Tor...
 
 ::
 
-  import stem
+  import asyncio
+  import sys
+
   import stem.connection
   import stem.socket
 
-  if __name__ == '__main__':
+  async def print_version() -> None:
     try:
       control_socket = stem.socket.ControlPort(port = 9051)
-      stem.connection.authenticate(control_socket)
+      await control_socket.connect()
+      await stem.connection.authenticate(control_socket)
     except stem.SocketError as exc:
-      print 'Unable to connect to tor on port 9051: %s' % exc
+      print(f'Unable to connect to tor on port 9051: {exc}')
       sys.exit(1)
     except stem.connection.AuthenticationFailure as exc:
-      print 'Unable to authenticate: %s' % exc
+      print(f'Unable to authenticate: {exc}')
       sys.exit(1)
 
-    print "Issuing 'GETINFO version' query...\\n"
-    control_socket.send('GETINFO version')
-    print control_socket.recv()
+    print("Issuing 'GETINFO version' query...\\n")
+    await control_socket.send('GETINFO version')
+    print(await control_socket.recv())
+
+
+  if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    try:
+      loop.run_until_complete(print_version())
+    finally:
+      loop.close()
 
 ::
 
   % python example.py
   Issuing 'GETINFO version' query...
 
-  version=0.2.4.10-alpha-dev (git-8be6058d8f31e578)
+  version=0.4.3.5
   OK
 
 **Module Overview:**
@@ -66,6 +77,7 @@ Tor...
 
   send_message - Writes a message to a control socket.
   recv_message - Reads a ControlMessage from a control socket.
+  recv_message_from_bytes_io - Reads a ControlMessage from an I/O stream.
   send_formatting - Performs the formatting expected from sent messages.
 """
 
@@ -211,11 +223,7 @@ class BaseSocket(object):
 
   async def _send(self, message: Union[bytes, str], handler: Callable[[asyncio.StreamWriter, Union[bytes, str]], Awaitable[None]]) -> None:
     """
-    Send message in a thread safe manner. Handler is expected to be of the form...
-
-    ::
-
-      my_handler(socket, socket_file, message)
+    Send message in a thread safe manner.
     """
 
     with self._send_lock:
@@ -243,11 +251,7 @@ class BaseSocket(object):
 
   async def _recv(self, handler):
     """
-    Receives a message in a thread safe manner. Handler is expected to be of the form...
-
-    ::
-
-      my_handler(socket, socket_file)
+    Receives a message in a thread safe manner.
     """
 
     with self._recv_lock:
@@ -400,7 +404,7 @@ class ControlSocket(BaseSocket):
   receiving complete messages.
 
   Callers should not instantiate this class directly, but rather use subclasses
-  which are expected to implement the **_make_socket()** method.
+  which are expected to implement the **_open_connection()** method.
   """
 
   def __init__(self) -> None:
@@ -448,12 +452,8 @@ class ControlPort(ControlSocket):
     """
     ControlPort constructor.
 
-    :param str address: ip address of the controller
-    :param int port: port number of the controller
-    :param bool connect: connects to the socket if True, leaves it unconnected otherwise
-
-    :raises: :class:`stem.SocketError` if connect is **True** and we're
-      unable to establish a connection
+    :param address: ip address of the controller
+    :param port: port number of the controller
     """
 
     super(ControlPort, self).__init__()
@@ -482,11 +482,7 @@ class ControlSocketFile(ControlSocket):
     """
     ControlSocketFile constructor.
 
-    :param str socket_path: path where the control socket is located
-    :param bool connect: connects to the socket if True, leaves it unconnected otherwise
-
-    :raises: :class:`stem.SocketError` if connect is **True** and we're
-      unable to establish a connection
+    :param path: path where the control socket is located
     """
 
     super(ControlSocketFile, self).__init__()
@@ -523,8 +519,7 @@ async def send_message(writer: asyncio.StreamWriter, message: Union[bytes, str],
     <line 3>\\r\\n
     .\\r\\n
 
-  :param control_file: file derived from the control socket (see the
-    socket's makefile() method for more information)
+  :param writer: writer object
   :param message: message to be sent on the control socket
   :param raw: leaves the message formatting untouched, passing it to the
     socket as-is
@@ -575,8 +570,7 @@ async def recv_message(reader: asyncio.StreamReader, arrived_at: Optional[float]
   Pulls from a control socket until we either have a complete message or
   encounter a problem.
 
-  :param control_file: file derived from the control socket (see the
-    socket's makefile() method for more information)
+  :param reader: reader object
 
   :returns: :class:`~stem.response.ControlMessage` read from the socket
 
@@ -694,11 +688,10 @@ async def recv_message(reader: asyncio.StreamReader, arrived_at: Optional[float]
 
 def recv_message_from_bytes_io(reader: BinaryIO, arrived_at: Optional[float] = None) -> stem.response.ControlMessage:
   """
-  Pulls from a control socket until we either have a complete message or
+  Pulls from an I/O stream until we either have a complete message or
   encounter a problem.
 
-  :param file control_file: file derived from the control socket (see the
-    socket's makefile() method for more information)
+  :param file reader: I/O stream
 
   :returns: :class:`~stem.response.ControlMessage` read from the socket
 
