@@ -582,7 +582,7 @@ class Query(stem.util.AsyncClassWrapper):
     )
 
   def start(self) -> None:
-    return self._call_async_method_soon('start')
+    self._call_async_method_soon('start')
 
   def run(self, suppress = False) -> List['stem.descriptor.Descriptor']:
     return self._execute_async_method('run', suppress)
