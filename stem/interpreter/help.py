@@ -6,6 +6,12 @@ Provides our /help responses.
 """
 
 import functools
+from typing import cast
+
+import stem.control
+import stem.util.conf
+
+from stem.util.term import format
 
 from stem.interpreter import (
   STANDARD_OUTPUT,
@@ -15,10 +21,8 @@ from stem.interpreter import (
   uses_settings,
 )
 
-from stem.util.term import format
 
-
-def response(controller, arg):
+def response(controller: stem.control.Controller, arg: str) -> str:
   """
   Provides our /help response.
 
@@ -33,7 +37,7 @@ def response(controller, arg):
   return _response(controller, _normalize(arg))
 
 
-def _normalize(arg):
+def _normalize(arg: str) -> str:
   arg = arg.upper()
 
   # If there's multiple arguments then just take the first. This is
@@ -52,7 +56,7 @@ def _normalize(arg):
 
 @functools.lru_cache()
 @uses_settings
-def _response(controller, arg, config):
+def _response(controller: stem.control.Controller, arg: str, config: stem.util.conf.Config) -> str:
   if not arg:
     return _general_help()
 
@@ -71,7 +75,7 @@ def _response(controller, arg, config):
   output += '\n'
 
   if arg == 'GETINFO':
-    results = controller.get_info('info/names', None)
+    results = cast(str, controller.get_info('info/names', None))
 
     if results:
       for line in results.splitlines():
@@ -81,7 +85,7 @@ def _response(controller, arg, config):
           output += format('%-33s' % opt, *BOLD_OUTPUT)
           output += format(' - %s' % summary, *STANDARD_OUTPUT) + '\n'
   elif arg == 'GETCONF':
-    results = controller.get_info('config/names', None)
+    results = cast(str, controller.get_info('config/names', None))
 
     if results:
       options = [opt.split(' ', 1)[0] for opt in results.splitlines()]
@@ -100,7 +104,7 @@ def _response(controller, arg, config):
       output += format('%-15s' % signal, *BOLD_OUTPUT)
       output += format(' - %s' % summary, *STANDARD_OUTPUT) + '\n'
   elif arg == 'SETEVENTS':
-    results = controller.get_info('events/names', None)
+    results = cast(str, controller.get_info('events/names', None))
 
     if results:
       entries = results.split()
@@ -115,7 +119,7 @@ def _response(controller, arg, config):
 
         output += format(line.rstrip(), *STANDARD_OUTPUT) + '\n'
   elif arg == 'USEFEATURE':
-    results = controller.get_info('features/names', None)
+    results = cast(str, controller.get_info('features/names', None))
 
     if results:
       output += format(results, *STANDARD_OUTPUT) + '\n'
@@ -126,7 +130,7 @@ def _response(controller, arg, config):
   return output.rstrip()
 
 
-def _general_help():
+def _general_help() -> str:
   lines = []
 
   for line in msg('help.general').splitlines():

@@ -137,6 +137,7 @@ import threading
 
 import stem.control
 import stem.response
+import stem.response.protocolinfo
 import stem.socket
 import stem.util.connection
 import stem.util.enum
@@ -144,6 +145,7 @@ import stem.util.str_tools
 import stem.util.system
 import stem.version
 
+from typing import Any, cast, List, Optional, Sequence, Tuple, Type, Union
 from stem.util import log
 
 AuthMethod = stem.util.enum.Enum('NONE', 'PASSWORD', 'COOKIE', 'SAFECOOKIE', 'UNKNOWN')
@@ -211,7 +213,7 @@ COMMON_TOR_COMMANDS = (
 )
 
 
-def connect(control_port = ('127.0.0.1', 'default'), control_socket = '/var/run/tor/control', password = None, password_prompt = False, chroot_path = None, controller = stem.control.Controller):
+def connect(control_port: Tuple[str, Union[str, int]] = ('127.0.0.1', 'default'), control_socket: str = '/var/run/tor/control', password: Optional[str] = None, password_prompt: bool = False, chroot_path: Optional[str] = None, controller: Type[stem.control.Controller] = stem.control.Controller) -> Any:
   """
   Convenience function for quickly getting a control connection. This is very
   handy for debugging or CLI setup, handling setup and prompting for a password
@@ -236,7 +238,7 @@ def connect(control_port = ('127.0.0.1', 'default'), control_socket = '/var/run/
      Use both port 9051 and 9151 by default.
 
   :param tuple contol_port: address and port tuple, for instance **('127.0.0.1', 9051)**
-  :param str path: path where the control socket is located
+  :param str control_socket: path where the control socket is located
   :param str password: passphrase to authenticate to the socket
   :param bool password_prompt: prompt for the controller password if it wasn't
     supplied
@@ -250,8 +252,10 @@ def connect(control_port = ('127.0.0.1', 'default'), control_socket = '/var/run/
     **control_port** and **control_socket** are **None**
   """
 
+  # TODO: change this function's API so we can provide a concrete type
+
   if controller is None or not issubclass(controller, stem.control.Controller):
-    raise ValueError('Controller should be a stem.control.BaseController subclass.')
+    raise ValueError('Controller should be a stem.control.Controller subclass.')
 
   async_controller_thread = stem.util.ThreadForWrappedAsyncClass()
   async_controller_thread.start()
@@ -268,13 +272,13 @@ def connect(control_port = ('127.0.0.1', 'default'), control_socket = '/var/run/
     raise
 
 
-async def connect_async(control_port = ('127.0.0.1', 'default'), control_socket = '/var/run/tor/control', password = None, password_prompt = False, chroot_path = None, controller = stem.control.AsyncController):
+async def connect_async(control_port: Tuple[str, Union[str, int]] = ('127.0.0.1', 'default'), control_socket: str = '/var/run/tor/control', password: Optional[str] = None, password_prompt: bool = False, chroot_path: Optional[str] = None, controller: Type[stem.control.BaseController] = stem.control.AsyncController) -> Any:
   if controller and not issubclass(controller, stem.control.BaseController):
     raise ValueError('The provided controller should be a stem.control.BaseController subclass.')
   return await _connect_async(control_port, control_socket, password, password_prompt, chroot_path, controller)
 
 
-async def _connect_async(control_port, control_socket, password, password_prompt, chroot_path, controller):
+async def _connect_async(control_port: Tuple[str, Union[str, int]], control_socket: str, password: Optional[str], password_prompt: bool, chroot_path: Optional[str], controller: Type[Union[stem.control.BaseController, stem.control.Controller]]) -> Any:
   if control_port is None and control_socket is None:
     raise ValueError('Neither a control port nor control socket were provided. Nothing to connect to.')
   elif control_port:
@@ -285,7 +289,8 @@ async def _connect_async(control_port, control_socket, password, password_prompt
     elif control_port[1] != 'default' and not stem.util.connection.is_valid_port(control_port[1]):
       raise ValueError("'%s' isn't a valid port" % control_port[1])
 
-  control_connection, error_msg = None, ''
+  control_connection = None  # type: Optional[stem.socket.ControlSocket]
+  error_msg = ''
 
   if control_socket:
     if os.path.exists(control_socket):
@@ -324,7 +329,7 @@ async def _connect_async(control_port, control_socket, password, password_prompt
   return await _connect_auth(control_connection, password, password_prompt, chroot_path, controller)
 
 
-async def _connect_auth(control_socket, password, password_prompt, chroot_path, controller):
+async def _connect_auth(control_socket: stem.socket.ControlSocket, password: str, password_prompt: bool, chroot_path: str, controller: Optional[Type[Union[stem.control.BaseController, stem.control.Controller]]]) -> Any:
   """
   Helper for the connect_* functions that authenticates the socket and
   constructs the controller.
@@ -348,7 +353,7 @@ async def _connect_auth(control_socket, password, password_prompt, chroot_path, 
     elif issubclass(controller, stem.control.BaseController):
       return controller(control_socket, is_authenticated = True)
     elif issubclass(controller, stem.control.Controller):
-      return controller(control_socket, is_authenticated = True, started_async_controller_thread = threading.current_thread())
+      return controller(control_socket, is_authenticated = True, started_async_controller_thread = cast(stem.util.ThreadForWrappedAsyncClass, threading.current_thread()))
   except IncorrectSocketType:
     if isinstance(control_socket, stem.socket.ControlPort):
       print(CONNECT_MESSAGES['wrong_port_type'].format(port = control_socket.port))
@@ -392,7 +397,7 @@ async def _connect_auth(control_socket, password, password_prompt, chroot_path, 
     return None
 
 
-async def authenticate(controller, password = None, chroot_path = None, protocolinfo_response = None):
+async def authenticate(controller: Union[stem.control.BaseController, stem.socket.ControlSocket], password: Optional[str] = None, chroot_path: Optional[str] = None, protocolinfo_response: Optional[stem.response.protocolinfo.ProtocolInfoResponse] = None) -> None:
   """
   Authenticates to a control socket using the information provided by a
   PROTOCOLINFO response. In practice this will often be all we need to
@@ -510,7 +515,7 @@ async def authenticate(controller, password = None, chroot_path = None, protocol
       raise AuthenticationFailure('socket connection failed (%s)' % exc)
 
   auth_methods = list(protocolinfo_response.auth_methods)
-  auth_exceptions = []
+  auth_exceptions = []  # type: List[stem.connection.AuthenticationFailure]
 
   if len(auth_methods) == 0:
     raise NoAuthMethods('our PROTOCOLINFO response did not have any methods for authenticating')
@@ -606,7 +611,7 @@ async def authenticate(controller, password = None, chroot_path = None, protocol
   raise AssertionError('BUG: Authentication failed without providing a recognized exception: %s' % str(auth_exceptions))
 
 
-async def authenticate_none(controller, suppress_ctl_errors = True):
+async def authenticate_none(controller: Union[stem.control.BaseController, stem.socket.ControlSocket], suppress_ctl_errors: bool = True) -> None:
   """
   Authenticates to an open control socket. All control connections need to
   authenticate before they can be used, even if tor hasn't been configured to
@@ -653,7 +658,7 @@ async def authenticate_none(controller, suppress_ctl_errors = True):
       raise OpenAuthRejected('Socket failed (%s)' % exc)
 
 
-async def authenticate_password(controller, password, suppress_ctl_errors = True):
+async def authenticate_password(controller: Union[stem.control.BaseController, stem.socket.ControlSocket], password: str, suppress_ctl_errors: bool = True) -> None:
   """
   Authenticates to a control socket that uses a password (via the
   HashedControlPassword torrc option). Quotes in the password are escaped.
@@ -723,7 +728,7 @@ async def authenticate_password(controller, password, suppress_ctl_errors = True
       raise PasswordAuthRejected('Socket failed (%s)' % exc)
 
 
-async def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = True):
+async def authenticate_cookie(controller: Union[stem.control.BaseController, stem.socket.ControlSocket], cookie_path: str, suppress_ctl_errors: bool = True) -> None:
   """
   Authenticates to a control socket that uses the contents of an authentication
   cookie (generated via the CookieAuthentication torrc option). This does basic
@@ -813,7 +818,7 @@ async def authenticate_cookie(controller, cookie_path, suppress_ctl_errors = Tru
       raise CookieAuthRejected('Socket failed (%s)' % exc, cookie_path, False)
 
 
-async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors = True):
+async def authenticate_safecookie(controller: Union[stem.control.BaseController, stem.socket.ControlSocket], cookie_path: str, suppress_ctl_errors: bool = True) -> None:
   """
   Authenticates to a control socket using the safe cookie method, which is
   enabled by setting the CookieAuthentication torrc option on Tor client's which
@@ -875,10 +880,11 @@ async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors =
 
   cookie_data = _read_cookie(cookie_path, True)
   client_nonce = os.urandom(32)
+  authchallenge_response = None  # type: stem.response.authchallenge.AuthChallengeResponse
 
   try:
     client_nonce_hex = stem.util.str_tools._to_unicode(binascii.b2a_hex(client_nonce))
-    authchallenge_response = await _msg(controller, 'AUTHCHALLENGE SAFECOOKIE %s' % client_nonce_hex)
+    authchallenge_response = await _msg(controller, 'AUTHCHALLENGE SAFECOOKIE %s' % client_nonce_hex)  # type: ignore
 
     if not authchallenge_response.is_ok():
       try:
@@ -891,13 +897,18 @@ async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors =
       if 'Authentication required.' in authchallenge_response_str:
         raise AuthChallengeUnsupported("SAFECOOKIE authentication isn't supported", cookie_path)
       elif 'AUTHCHALLENGE only supports' in authchallenge_response_str:
-        raise UnrecognizedAuthChallengeMethod(authchallenge_response_str, cookie_path)
+        # TODO: This code path has been broken for years. Do we still need it?
+        # If so, what should authchallenge_method be?
+
+        authchallenge_method = None
+
+        raise UnrecognizedAuthChallengeMethod(authchallenge_response_str, cookie_path, authchallenge_method)
       elif 'Invalid base16 client nonce' in authchallenge_response_str:
         raise InvalidClientNonce(authchallenge_response_str, cookie_path)
       elif 'Cookie authentication is disabled' in authchallenge_response_str:
         raise CookieAuthRejected(authchallenge_response_str, cookie_path, True)
       else:
-        raise AuthChallengeFailed(authchallenge_response, cookie_path)
+        raise AuthChallengeFailed(authchallenge_response_str, cookie_path)
   except stem.ControllerError as exc:
     try:
       await controller.connect()
@@ -907,7 +918,7 @@ async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors =
     if not suppress_ctl_errors:
       raise
     else:
-      raise AuthChallengeFailed('Socket failed (%s)' % exc, cookie_path, True)
+      raise AuthChallengeFailed('Socket failed (%s)' % exc, cookie_path)
 
   try:
     stem.response.convert('AUTHCHALLENGE', authchallenge_response)
@@ -935,7 +946,7 @@ async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors =
     auth_response = await _msg(controller, 'AUTHENTICATE %s' % stem.util.str_tools._to_unicode(binascii.b2a_hex(client_hash)))
   except stem.ControllerError as exc:
     try:
-      controller.connect()
+      await controller.connect()
     except:
       pass
 
@@ -947,7 +958,7 @@ async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors =
   # if we got anything but an OK response then err
   if not auth_response.is_ok():
     try:
-      controller.connect()
+      await controller.connect()
     except:
       pass
 
@@ -962,7 +973,7 @@ async def authenticate_safecookie(controller, cookie_path, suppress_ctl_errors =
       raise CookieAuthRejected(str(auth_response), cookie_path, True, auth_response)
 
 
-async def get_protocolinfo(controller):
+async def get_protocolinfo(controller: Union[stem.control.BaseController, stem.socket.ControlSocket]) -> stem.response.protocolinfo.ProtocolInfoResponse:
   """
   Issues a PROTOCOLINFO query to a control socket, getting information about
   the tor process running on it. If the socket is already closed then it is
@@ -991,9 +1002,7 @@ async def get_protocolinfo(controller):
   # next followed by authentication. Transparently reconnect if that happens.
 
   if not protocolinfo_response or str(protocolinfo_response) == 'Authentication required.':
-    potential_coroutine = controller.connect()
-    if asyncio.iscoroutine(potential_coroutine):
-      await potential_coroutine
+    await controller.connect()
 
     try:
       protocolinfo_response = await _msg(controller, 'PROTOCOLINFO 1')
@@ -1001,10 +1010,10 @@ async def get_protocolinfo(controller):
       raise stem.SocketError(exc)
 
   stem.response.convert('PROTOCOLINFO', protocolinfo_response)
-  return protocolinfo_response
+  return protocolinfo_response  # type: ignore
 
 
-async def _msg(controller, message):
+async def _msg(controller: Union[stem.control.BaseController, stem.socket.ControlSocket], message: str) -> stem.response.ControlMessage:
   """
   Sends and receives a message with either a
   :class:`~stem.socket.ControlSocket` or :class:`~stem.control.BaseController`.
@@ -1014,13 +1023,10 @@ async def _msg(controller, message):
     await controller.send(message)
     return await controller.recv()
   else:
-    message = controller.msg(message)
-    if asyncio.iscoroutine(message):
-      message = await message
-    return message
+    return await controller.msg(message)
 
 
-def _connection_for_default_port(address):
+def _connection_for_default_port(address: str) -> stem.socket.ControlPort:
   """
   Attempts to provide a controller connection for either port 9051 (default for
   relays) or 9151 (default for Tor Browser). If both fail then this raises the
@@ -1042,13 +1048,15 @@ def _connection_for_default_port(address):
       raise exc
 
 
-def _read_cookie(cookie_path, is_safecookie):
+def _read_cookie(cookie_path: str, is_safecookie: bool) -> bytes:
   """
   Provides the contents of a given cookie file.
 
   :param str cookie_path: absolute path of the cookie file
   :param bool is_safecookie: **True** if this was for SAFECOOKIE
     authentication, **False** if for COOKIE
+
+  :returns: **bytes** with the cookie file content
 
   :raises:
     * :class:`stem.connection.UnreadableCookieFile` if the cookie file is
@@ -1084,12 +1092,12 @@ def _read_cookie(cookie_path, is_safecookie):
     raise UnreadableCookieFile(exc_msg, cookie_path, is_safecookie)
 
 
-def _hmac_sha256(key, msg):
+def _hmac_sha256(key: bytes, msg: bytes) -> bytes:
   """
   Generates a sha256 digest using the given key and message.
 
-  :param str key: starting key for the hash
-  :param str msg: message to be hashed
+  :param bytes key: starting key for the hash
+  :param bytes msg: message to be hashed
 
   :returns: sha256 digest of msg as bytes, hashed using the given key
   """
@@ -1101,11 +1109,11 @@ class AuthenticationFailure(Exception):
   """
   Base error for authentication failures.
 
-  :var stem.socket.ControlMessage auth_response: AUTHENTICATE response from the
+  :var stem.response.ControlMessage auth_response: AUTHENTICATE response from the
     control socket, **None** if one wasn't received
   """
 
-  def __init__(self, message, auth_response = None):
+  def __init__(self, message: str, auth_response: Optional[stem.response.ControlMessage] = None) -> None:
     super(AuthenticationFailure, self).__init__(message)
     self.auth_response = auth_response
 
@@ -1117,7 +1125,7 @@ class UnrecognizedAuthMethods(AuthenticationFailure):
   :var list unknown_auth_methods: authentication methods that weren't recognized
   """
 
-  def __init__(self, message, unknown_auth_methods):
+  def __init__(self, message: str, unknown_auth_methods: Sequence[str]) -> None:
     super(UnrecognizedAuthMethods, self).__init__(message)
     self.unknown_auth_methods = unknown_auth_methods
 
@@ -1161,7 +1169,7 @@ class CookieAuthFailed(AuthenticationFailure):
     authentication attempt
   """
 
-  def __init__(self, message, cookie_path, is_safecookie, auth_response = None):
+  def __init__(self, message: str, cookie_path: str, is_safecookie: bool, auth_response: Optional[stem.response.ControlMessage] = None) -> None:
     super(CookieAuthFailed, self).__init__(message, auth_response)
     self.is_safecookie = is_safecookie
     self.cookie_path = cookie_path
@@ -1188,7 +1196,7 @@ class AuthChallengeFailed(CookieAuthFailed):
   AUTHCHALLENGE command has failed.
   """
 
-  def __init__(self, message, cookie_path):
+  def __init__(self, message: str, cookie_path: str) -> None:
     super(AuthChallengeFailed, self).__init__(message, cookie_path, True)
 
 
@@ -1205,7 +1213,7 @@ class UnrecognizedAuthChallengeMethod(AuthChallengeFailed):
   :var str authchallenge_method: AUTHCHALLENGE method that Tor couldn't recognize
   """
 
-  def __init__(self, message, cookie_path, authchallenge_method):
+  def __init__(self, message: str, cookie_path: str, authchallenge_method: str) -> None:
     super(UnrecognizedAuthChallengeMethod, self).__init__(message, cookie_path)
     self.authchallenge_method = authchallenge_method
 
@@ -1237,7 +1245,7 @@ class NoAuthCookie(MissingAuthInfo):
     authentication, **False** if for COOKIE
   """
 
-  def __init__(self, message, is_safecookie):
+  def __init__(self, message: str, is_safecookie: bool) -> None:
     super(NoAuthCookie, self).__init__(message)
     self.is_safecookie = is_safecookie
 
