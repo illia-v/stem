@@ -336,8 +336,8 @@ class RelaySocket(BaseSocket):
     """
     RelaySocket constructor.
 
-    :param str address: ip address of the relay
-    :param int port: orport of the relay
+    :param address: ip address of the relay
+    :param port: orport of the relay
     """
 
     super(RelaySocket, self).__init__()
@@ -348,7 +348,7 @@ class RelaySocket(BaseSocket):
     """
     Sends a message to the relay's ORPort.
 
-    :param str message: message to be formatted and sent to the socket
+    :param message: message to be formatted and sent to the socket
 
     :raises:
       * :class:`stem.SocketError` if a problem arises in using the socket
@@ -361,7 +361,7 @@ class RelaySocket(BaseSocket):
     """
     Receives a message from the relay.
 
-    :param float timeout: maxiumum number of seconds to await a response, this
+    :param timeout: maxiumum number of seconds to await a response, this
       blocks indefinitely if **None**
 
     :returns: bytes for the message received
@@ -411,7 +411,7 @@ class ControlSocket(BaseSocket):
     Formats and sends a message to the control socket. For more information see
     the :func:`~stem.socket.send_message` function.
 
-    :param str message: message to be formatted and sent to the socket
+    :param message: message to be formatted and sent to the socket
 
     :raises:
       * :class:`stem.SocketError` if a problem arises in using the socket
@@ -450,6 +450,10 @@ class ControlPort(ControlSocket):
 
     :param str address: ip address of the controller
     :param int port: port number of the controller
+    :param bool connect: connects to the socket if True, leaves it unconnected otherwise
+
+    :raises: :class:`stem.SocketError` if connect is **True** and we're
+      unable to establish a connection
     """
 
     super(ControlPort, self).__init__()
@@ -479,6 +483,10 @@ class ControlSocketFile(ControlSocket):
     ControlSocketFile constructor.
 
     :param str socket_path: path where the control socket is located
+    :param bool connect: connects to the socket if True, leaves it unconnected otherwise
+
+    :raises: :class:`stem.SocketError` if connect is **True** and we're
+      unable to establish a connection
     """
 
     super(ControlSocketFile, self).__init__()
@@ -515,10 +523,10 @@ async def send_message(writer: asyncio.StreamWriter, message: Union[bytes, str],
     <line 3>\\r\\n
     .\\r\\n
 
-  :param file control_file: file derived from the control socket (see the
+  :param control_file: file derived from the control socket (see the
     socket's makefile() method for more information)
-  :param str message: message to be sent on the control socket
-  :param bool raw: leaves the message formatting untouched, passing it to the
+  :param message: message to be sent on the control socket
+  :param raw: leaves the message formatting untouched, passing it to the
     socket as-is
 
   :raises:
@@ -567,7 +575,7 @@ async def recv_message(reader: asyncio.StreamReader, arrived_at: Optional[float]
   Pulls from a control socket until we either have a complete message or
   encounter a problem.
 
-  :param file control_file: file derived from the control socket (see the
+  :param control_file: file derived from the control socket (see the
     socket's makefile() method for more information)
 
   :returns: :class:`~stem.response.ControlMessage` read from the socket
@@ -811,7 +819,7 @@ def send_formatting(message: str) -> str:
   Performs the formatting expected from sent control messages. For more
   information see the :func:`~stem.socket.send_message` function.
 
-  :param str message: message to be formatted
+  :param message: message to be formatted
 
   :returns: **str** of the message wrapped by the formatting expected from
     controllers
